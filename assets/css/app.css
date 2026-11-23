@@ -3,6 +3,7 @@
 
 @import "tailwindcss" source(none);
 @import "phoenix-colocated/pulumi_viewer/colocated.css";
+@import "../node_modules/@xyflow/react/dist/style.css";
 @source "../css";
 @source "../js";
 @source "../../lib/pulumi_viewer_web";

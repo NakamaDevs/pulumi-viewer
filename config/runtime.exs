@@ -1,5 +1,17 @@
 import Config
 
+# Pulumi backend to read, same form as `pulumi login`: s3://bucket[/prefix] or file://dir.
+# For an AWS emulator (Floci, AWS Emulator) also set AWS_ENDPOINT_URL.
+if url = System.get_env("PULUMI_BACKEND_URL") do
+  config :pulumi_viewer, backend_url: url
+end
+
+config :ex_aws,
+  region: System.get_env("AWS_REGION", "us-east-1"),
+  access_key_id: [{:system, "AWS_ACCESS_KEY_ID"}, :instance_role],
+  secret_access_key: [{:system, "AWS_SECRET_ACCESS_KEY"}, :instance_role],
+  security_token: [{:system, "AWS_SESSION_TOKEN"}, :instance_role]
+
 # config/runtime.exs is executed for all environments, including
 # during releases. It is executed after compilation and before the
 # system starts, so it is typically used to load production configuration

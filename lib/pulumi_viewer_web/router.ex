@@ -17,7 +17,8 @@ defmodule PulumiViewerWeb.Router do
   scope "/", PulumiViewerWeb do
     pipe_through :browser
 
-    get "/", PageController, :home
+    live "/", StacksLive
+    live "/stacks/:project/:stack", StackLive
   end
 
   # Other scopes may use custom stacks.

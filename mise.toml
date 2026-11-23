@@ -1,0 +1,31 @@
+[tools]
+elixir = "1.19.5-otp-28"
+erlang = "28.4.1"
+
+[env]
+PORT = "4077"
+
+[tasks.setup]
+description = "Install deps and build assets"
+run = ["mix setup", "cd assets && npm ci"]
+
+[tasks.serve]
+description = "Serve with the demo fixture state (or PULUMI_BACKEND_URL if set)"
+run = "mix phx.server"
+
+[tasks."serve:aws"]
+description = "Serve a real S3 backend: mise run serve:aws -- <aws-profile> s3://<bucket>[/prefix]"
+run = '''
+eval "$(aws configure export-credentials --profile "$1" --format env)"
+PULUMI_BACKEND_URL="$2" mix phx.server
+'''
+
+[tasks."serve:emulator"]
+description = "Serve state from a local AWS emulator: mise run serve:emulator -- s3://<bucket> [endpoint]"
+run = '''
+AWS_ENDPOINT_URL="${2:-http://localhost:4566}" AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test \
+PULUMI_BACKEND_URL="$1" mix phx.server
+'''
+
+[tasks.test]
+run = "mix test"
