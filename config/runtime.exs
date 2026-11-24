@@ -21,24 +21,16 @@ case System.get_env("PULUMI_VIEWER_SOURCES") do
   v -> config :pulumi_viewer, sources: v
 end
 
-# Credential chain:
-# 1. keys in the environment;
-# 2. a host credential helper (AWS_CONTAINER_CREDENTIALS_FULL_URI + AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE,
-#    ECS JSON format), refreshed by ExAws before `Expiration` (works with `aws login` profiles);
-# 3. AWS_PROFILE from ~/.aws (also AWS SSO, refreshed every 30 s);
-# 4. an instance role.
+# Credential chain: keys in the environment; then a host credential helper
+# (AWS_CONTAINER_CREDENTIALS_FULL_URI + AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE), which
+# PulumiViewer.HostCredentials reads and passes to each request; then AWS_PROFILE from ~/.aws
+# (also AWS SSO, refreshed every 30 s); then an instance role.
 present? = &(System.get_env(&1) not in [nil, ""])
-
-helper =
-  if present?.("AWS_CONTAINER_CREDENTIALS_FULL_URI") and
-       present?.("AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE"),
-     do: [:pod_identity],
-     else: []
 
 aws_profile =
   if present?.("AWS_PROFILE"), do: [{:awscli, System.get_env("AWS_PROFILE"), 30}], else: []
 
-chain = &([{:system, &1}] ++ helper ++ aws_profile ++ [:instance_role])
+chain = &([{:system, &1}] ++ aws_profile ++ [:instance_role])
 
 config :ex_aws,
   region: System.get_env("AWS_REGION", "us-east-1"),

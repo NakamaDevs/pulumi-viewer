@@ -16,21 +16,12 @@ defmodule PulumiViewer.Infra.Links do
         _ -> []
       end
     end)
-    |> Task.async_stream(
-      fn {src, s} ->
-        case State.checkpoint(src, s.project, s.stack) do
-          {:ok, cp} ->
-            for %{id: id} <- cp.resources,
-                is_binary(id) and id != "",
-                do: {id, %{source: src.name, kind: src.kind, project: s.project, stack: s.stack}}
-
-          _ ->
-            []
-        end
-      end,
-      max_concurrency: 8,
-      timeout: 60_000,
-      on_timeout: :kill_task
+    |> then(
+      &Task.Supervisor.async_stream_nolink(PulumiViewer.TaskSupervisor, &1, link_fun(),
+        max_concurrency: 8,
+        timeout: 60_000,
+        on_timeout: :kill_task
+      )
     )
     |> Enum.flat_map(fn
       {:ok, pairs} -> pairs
@@ -38,5 +29,19 @@ defmodule PulumiViewer.Infra.Links do
     end)
     |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
     |> Map.new(fn {id, l} -> {id, Enum.uniq(l)} end)
+  end
+
+  defp link_fun do
+    fn {src, s} ->
+      case State.checkpoint(src, s.project, s.stack) do
+        {:ok, cp} ->
+          for %{id: id} <- cp.resources,
+              is_binary(id) and id != "",
+              do: {id, %{source: src.name, kind: src.kind, project: s.project, stack: s.stack}}
+
+        _ ->
+          []
+      end
+    end
   end
 end

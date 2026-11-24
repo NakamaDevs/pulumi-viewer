@@ -78,7 +78,14 @@ defmodule PulumiViewer.CloudFormation.Client do
   end
 
   defp attempt(region, action, params, n) do
-    opts = env_credentials() ++ Application.get_env(:pulumi_viewer, :cloudformation_aws_opts, [])
+    case env_credentials() do
+      {:error, e} -> {:error, Error.from(e)}
+      creds -> attempt(region, action, params, n, creds)
+    end
+  end
+
+  defp attempt(region, action, params, n, creds) do
+    opts = creds ++ Application.get_env(:pulumi_viewer, :cloudformation_aws_opts, [])
 
     if credentials?(opts) do
       op = %ExAws.Operation.Query{
@@ -112,14 +119,13 @@ defmodule PulumiViewer.CloudFormation.Client do
     end
   end
 
-  # The host credential helper is read inside ExAws's AuthCache, which raises or exits when it
-  # does not answer.
+  # ExAws can raise or exit (for example in its AuthCache); keep it this source's error.
   defp request(op, opts) do
     ExAws.request(op, opts)
   rescue
-    _ -> {:error, :credential_helper}
+    e -> {:error, Exception.message(e)}
   catch
-    :exit, _ -> {:error, :credential_helper}
+    :exit, reason -> {:error, {:exit, reason}}
   end
 
   defp body(%{body: b}), do: b
@@ -137,8 +143,7 @@ defmodule PulumiViewer.CloudFormation.Client do
       present?("AWS_ACCESS_KEY_ID") ->
         :env
 
-      present?("AWS_CONTAINER_CREDENTIALS_FULL_URI") and
-          present?("AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE") ->
+      PulumiViewer.HostCredentials.configured?() ->
         :container_full_uri
 
       present?("AWS_PROFILE") ->
@@ -166,6 +171,12 @@ defmodule PulumiViewer.CloudFormation.Client do
           secret_access_key: System.get_env("AWS_SECRET_ACCESS_KEY"),
           security_token: System.get_env("AWS_SESSION_TOKEN")
         ]
+
+      :container_full_uri ->
+        case PulumiViewer.HostCredentials.fetch() do
+          {:ok, keys} -> keys
+          error -> error
+        end
 
       # config/runtime.exs reads AWS_PROFILE through ExAws's :awscli source (refreshed every 30 s);
       # per-request overrides cannot carry it.

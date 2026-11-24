@@ -21,8 +21,9 @@ defmodule PulumiViewerWeb.StacksLive do
   # Each source loads on its own, so one failing source does not hide the others.
   defp load(socket) do
     results =
-      Sources.all()
-      |> Task.async_stream(
+      Task.Supervisor.async_stream_nolink(
+        PulumiViewer.TaskSupervisor,
+        Sources.all(),
         fn s ->
           case PulumiViewer.Infra.list_stacks(s.name) do
             {:ok, stacks} -> {s, {:ok, stacks}}
@@ -36,7 +37,8 @@ defmodule PulumiViewerWeb.StacksLive do
       |> Enum.zip(Sources.all())
       |> Enum.map(fn
         {{:ok, r}, _} -> r
-        {{:exit, _}, s} -> {s, {:error, "Timed out while reading this source."}}
+        {{:exit, :timeout}, s} -> {s, {:error, "Timed out while reading this source."}}
+        {{:exit, reason}, s} -> {s, {:error, "Read failed: #{inspect(reason)}"}}
       end)
 
     assign(socket, results: results)
@@ -169,6 +171,7 @@ defmodule PulumiViewerWeb.StacksLive do
                     {kind_label(s.kind)}
                   </span>
                 </div>
+                <div :if={s.error} class="text-xs text-error">{s.error}</div>
                 <div class="text-xs opacity-50">
                   {if s.updated_at,
                     do: Calendar.strftime(s.updated_at, "%Y-%m-%d %H:%M UTC"),

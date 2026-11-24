@@ -16,6 +16,9 @@ defmodule PulumiViewer.Sources do
     )
   end
 
+  @doc "Checks the configuration at startup, so a bad entry stops the app with a clear message."
+  def validate!, do: all()
+
   @doc "The source with this name, or the first one for `nil`."
   def fetch(nil), do: {:ok, hd(all())}
 
@@ -63,7 +66,15 @@ defmodule PulumiViewer.Sources do
   defp kind("file://" <> _), do: :pulumi
   defp kind("s3://" <> _), do: :pulumi
 
-  defp kind(url),
+  defp kind(url) do
+    [scheme | _] = String.split(url, "://", parts: 2)
+
+    if Map.has_key?(Application.get_env(:pulumi_viewer, :test_backends, %{}), scheme),
+      do: :pulumi,
+      else: unknown(url)
+  end
+
+  defp unknown(url),
     do:
       raise(
         ArgumentError,

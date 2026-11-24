@@ -105,8 +105,4 @@ config :phoenix, :json_library, Jason
 
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
-# ExAws refreshes cached credentials (host helper, instance role) this long before `Expiration`.
-# The default is 5 min; `aws login` credentials can last only minutes. Compile-time setting.
-config :ex_aws, auth_refresh_lead_time: 60_000
-
 import_config "#{config_env()}.exs"

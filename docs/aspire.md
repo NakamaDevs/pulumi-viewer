@@ -20,7 +20,7 @@ or Node. To run your own changes, build the `Dockerfile` at the repository root 
 | `PULUMI_VIEWER_SOURCES` | none | several sources: `name=url` per line or `;`-separated, for example `pulumi=file:///state/pulumi;cloudformation=cloudformation://us-east-1`; overrides `PULUMI_BACKEND_URL` |
 | `AWS_REGION` | `us-east-1` | region of the state bucket |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN` | none | credentials; or an instance role on EC2/ECS |
-| `AWS_CONTAINER_CREDENTIALS_FULL_URI`, `AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE` | none | credentials endpoint on the host (ECS JSON: `AccessKeyId`, `SecretAccessKey`, `Token`, `Expiration`); the viewer gets new credentials 60 s before `Expiration`. Use it for profiles ExAws cannot read, such as `aws login`. Serve an `Expiration` at least 2 min ahead |
+| `AWS_CONTAINER_CREDENTIALS_FULL_URI`, `AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE` | none | credentials endpoint on the host (ECS JSON: `AccessKeyId`, `SecretAccessKey`, `Token`, `Expiration`); the viewer gets new credentials 60 s before `Expiration`. Use it for profiles ExAws cannot read, such as `aws login`. If the helper does not answer, only the AWS sources show an error |
 | `AWS_PROFILE` | none | a profile from a mounted `~/.aws` (also SSO) |
 | `AWS_ENDPOINT_URL` (or `AWS_ENDPOINT_URL_S3`) | none | S3 on an emulator: Floci, LocalStack, AWS Emulator |
 | `PORT` | `4000` | HTTP port inside the container |

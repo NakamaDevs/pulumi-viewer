@@ -29,6 +29,11 @@ defmodule PulumiViewer.CfnMock do
           {:ok, %{status_code: 400, body: error("Throttling", "Rate exceeded")}}
         end
 
+      :stack_gone ->
+        if params["Action"] == "ListStacks",
+          do: {:ok, %{status_code: 200, body: answer(params)}},
+          else: {:ok, %{status_code: 400, body: error("ValidationError", "Stack does not exist")}}
+
       :ok ->
         {:ok, %{status_code: 200, body: answer(params)}}
     end

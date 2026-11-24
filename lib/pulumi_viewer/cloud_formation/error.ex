@@ -1,6 +1,6 @@
 defmodule PulumiViewer.CloudFormation.Error do
   @moduledoc "A CloudFormation read failed. The message is written for the person who runs the viewer."
-  defexception [:message, :code]
+  defexception [:message, :code, source?: false]
 
   def from({:http_error, status, %{body: body}}), do: from_body(status, body)
   def from({:http_error, status, body}) when is_binary(body), do: from_body(status, body)
@@ -29,6 +29,7 @@ defmodule PulumiViewer.CloudFormation.Error do
       "AccessDenied" <> _ ->
         %__MODULE__{
           code: code,
+          source?: true,
           message:
             "Access denied: #{text}. The viewer needs cloudformation:ListStacks, DescribeStacks, ListStackResources, DescribeStackEvents and GetTemplate."
         }
@@ -48,7 +49,7 @@ defmodule PulumiViewer.CloudFormation.Error do
         _ -> credentials_hint(System.get_env("AWS_PROFILE"))
       end
 
-    %__MODULE__{code: code, message: what <> " " <> hint}
+    %__MODULE__{code: code, source?: true, message: what <> " " <> hint}
   end
 
   @doc false

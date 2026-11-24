@@ -52,22 +52,19 @@ defmodule PulumiViewer.CloudFormation.CredentialSourceTest do
              "The host credential helper did not answer. Run `aws login --profile bundle-readonly` on the host."
   end
 
-  test "runtime.exs chain: env keys, then the helper, then AWS_PROFILE, then the instance role" do
+  test "runtime.exs chain: env keys, then AWS_PROFILE, then the instance role" do
     System.put_env("AWS_PROFILE", "p")
     System.put_env("AWS_CONTAINER_CREDENTIALS_FULL_URI", "http://h/creds")
     System.put_env("AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE", "/run/token")
     ex_aws = Config.Reader.read!("config/runtime.exs", env: :test)[:ex_aws]
 
-    assert ex_aws[:access_key_id] ==
-             [{:system, "AWS_ACCESS_KEY_ID"}, :pod_identity, {:awscli, "p", 30}, :instance_role]
-
-    System.delete_env("AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE")
-    ex_aws = Config.Reader.read!("config/runtime.exs", env: :test)[:ex_aws]
-    refute :pod_identity in ex_aws[:security_token]
-  end
-
-  test "ExAws refreshes 60 s before Expiration (aws login credentials can be short)" do
-    assert Application.get_env(:ex_aws, :auth_refresh_lead_time) == 60_000
+    # the helper is read by PulumiViewer.HostCredentials, not by ExAws's :pod_identity (that one
+    # can crash ExAws's AuthCache)
+    assert ex_aws[:access_key_id] == [
+             {:system, "AWS_ACCESS_KEY_ID"},
+             {:awscli, "p", 30},
+             :instance_role
+           ]
   end
 
   test "configparser_ex is available, so ExAws can read ~/.aws/config" do

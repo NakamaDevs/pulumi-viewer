@@ -22,6 +22,16 @@ defmodule PulumiViewer.Storage do
   def parse_url("cloudformation://" <> rest),
     do: {PulumiViewer.CloudFormation, PulumiViewer.CloudFormation.parse_url(rest)}
 
+  # tests register extra schemes (see test/support/failing_storage.ex)
+  def parse_url(url) do
+    [scheme | _] = String.split(url, "://", parts: 2)
+
+    case Application.get_env(:pulumi_viewer, :test_backends, %{})[scheme] do
+      nil -> raise ArgumentError, "unknown source URL #{inspect(url)}"
+      backend -> backend
+    end
+  end
+
   @doc "The backend of one source (see `PulumiViewer.Sources`)."
   def for_source(%{url: url}), do: parse_url(url)
 

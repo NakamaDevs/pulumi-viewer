@@ -35,7 +35,9 @@ defmodule PulumiViewer.Infra.State do
                 {:error, :not_found}
 
               %{key: key} ->
-                with {:ok, body} <- Storage.read(backend, key), do: Checkpoint.parse(body)
+                safe(fn ->
+                  with {:ok, body} <- Storage.read(backend, key), do: Checkpoint.parse(body)
+                end)
             end
           end
       end
@@ -72,9 +74,12 @@ defmodule PulumiViewer.Infra.State do
   defp safe(fun) do
     fun.()
   rescue
-    e ->
-      {:error, %CloudFormation.Error{message: "Cannot read the state: " <> Exception.message(e)}}
+    e -> {:error, read_error(Exception.message(e))}
+  catch
+    :exit, reason -> {:error, read_error(inspect(reason))}
   end
+
+  defp read_error(msg), do: %CloudFormation.Error{message: "Cannot read the state: " <> msg}
 
   defp blank(""), do: nil
   defp blank(v), do: v

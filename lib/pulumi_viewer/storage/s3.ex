@@ -24,7 +24,23 @@ defmodule PulumiViewer.Storage.S3 do
   defp strip(%{prefix: p}, key), do: String.replace_prefix(key, p <> "/", "")
 
   # Honour AWS_ENDPOINT_URL so the same code reads Floci, LocalStack or the AWS Emulator.
-  defp aws_opts do
+  defp aws_opts, do: host_credentials() ++ endpoint_opts()
+
+  defp host_credentials do
+    if PulumiViewer.HostCredentials.configured?() do
+      case PulumiViewer.HostCredentials.fetch() do
+        {:ok, keys} ->
+          keys
+
+        _ ->
+          raise "The host credential helper did not answer. Run `aws login --profile bundle-readonly` on the host."
+      end
+    else
+      []
+    end
+  end
+
+  defp endpoint_opts do
     case System.get_env("AWS_ENDPOINT_URL_S3") || System.get_env("AWS_ENDPOINT_URL") do
       nil ->
         []

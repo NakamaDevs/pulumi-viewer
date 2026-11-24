@@ -22,6 +22,7 @@ defmodule PulumiViewer.Infra.Stack do
     attribute :resource_count, :integer, public?: true
     attribute :updated_at, :utc_datetime_usec, public?: true
     attribute :pulumi_version, :string, public?: true
+    attribute :error, :string, public?: true
   end
 end
 
@@ -38,26 +39,39 @@ defmodule PulumiViewer.Infra.Stack.Read do
   end
 
   defp read_all(src, stacks) do
-    stacks =
-      stacks
-      |> Task.async_stream(
+    results =
+      Task.Supervisor.async_stream_nolink(
+        PulumiViewer.TaskSupervisor,
+        stacks,
         fn s ->
           case State.checkpoint(src, s.project, s.stack) do
             {:ok, cp} -> {:ok, stack(src, s, cp)}
-            # a source error (credentials, access) is shown instead of an empty list
-            {:error, %PulumiViewer.CloudFormation.Error{} = e} -> {:error, e}
-            _ -> {:ok, stack(src, s, %{resources: [], updated_at: nil, pulumi_version: nil})}
+            # credentials or access: the whole source fails, with a clear message
+            {:error, %PulumiViewer.CloudFormation.Error{source?: true} = e} -> {:error, e}
+            # one stack failed (deleted, denied, unreadable): show it with the message
+            {:error, e} -> {:ok, failed(src, s, PulumiViewer.error_message(e))}
+            _ -> {:ok, failed(src, s, nil)}
           end
         end,
         max_concurrency: 8,
-        timeout: 60_000
+        timeout: 60_000,
+        on_timeout: :kill_task
       )
-      |> Enum.map(fn {:ok, r} -> r end)
+      |> Enum.zip(stacks)
+      |> Enum.map(fn
+        {{:ok, r}, _} -> r
+        {{:exit, :timeout}, s} -> {:ok, failed(src, s, "Timed out while reading this stack.")}
+        {{:exit, reason}, s} -> {:ok, failed(src, s, "Read failed: #{inspect(reason)}")}
+      end)
 
-    case Enum.find(stacks, &match?({:error, _}, &1)) do
-      nil -> {:ok, Enum.map(stacks, &elem(&1, 1))}
+    case Enum.find(results, &match?({:error, _}, &1)) do
+      nil -> {:ok, Enum.map(results, &elem(&1, 1))}
       error -> error
     end
+  end
+
+  defp failed(src, s, msg) do
+    %{stack(src, s, %{resources: [], updated_at: nil, pulumi_version: nil}) | error: msg}
   end
 
   defp stack(src, s, cp) do
