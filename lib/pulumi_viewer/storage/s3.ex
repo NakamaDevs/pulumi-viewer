@@ -24,11 +24,12 @@ defmodule PulumiViewer.Storage.S3 do
   defp strip(%{prefix: p}, key), do: String.replace_prefix(key, p <> "/", "")
 
   # Honour AWS_ENDPOINT_URL so the same code reads Floci, LocalStack or the AWS Emulator.
-  # a profile error shows up as the S3 error that follows (no credentials)
+  # Never fall back to other credentials when the source's profile fails: that would read
+  # this source with another account's keys. The source shows the profile error instead.
   defp aws_opts(cfg) do
     case PulumiViewer.AwsCredentials.opts(cfg[:profile]) do
       {:ok, creds} -> creds ++ endpoint_opts()
-      {:error, _} -> endpoint_opts()
+      {:error, e} -> raise e
     end
   end
 

@@ -41,6 +41,36 @@ defmodule PulumiViewerWeb.SourcesLiveTest do
     assert has_element?(view, ~s|a[href="/stacks/demo/dev?source=pulumi"]|)
   end
 
+  test "a failing S3 source or a bad URL does not hide the other sources", %{conn: conn} do
+    Application.put_env(
+      :pulumi_viewer,
+      :backend_urls,
+      "pulumi=file://test/fixtures/state,broken=s3://nobucket,typo=ftp://x"
+    )
+
+    prev =
+      Enum.map(
+        ~w(AWS_ENDPOINT_URL AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY),
+        &{&1, System.get_env(&1)}
+      )
+
+    System.put_env(%{
+      "AWS_ENDPOINT_URL" => "http://127.0.0.1:1",
+      "AWS_ACCESS_KEY_ID" => "x",
+      "AWS_SECRET_ACCESS_KEY" => "y"
+    })
+
+    on_exit(fn ->
+      for {k, v} <- prev, do: if(v, do: System.put_env(k, v), else: System.delete_env(k))
+    end)
+
+    {:ok, view, html} = live(conn, ~p"/")
+    assert has_element?(view, ~s|a[href="/stacks/demo/dev?source=pulumi"]|)
+    assert html =~ "broken:"
+    assert html =~ "ftp://x"
+    assert html =~ "duplicate source name pulumi"
+  end
+
   test "a stack page reads from the source in the link", %{conn: conn} do
     {:ok, _view, html} = live(conn, ~p"/stacks/web/web-prod?source=cfn")
     assert html =~ "AWS::Lambda::Function"

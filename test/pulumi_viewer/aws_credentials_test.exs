@@ -42,6 +42,29 @@ defmodule PulumiViewer.AwsCredentialsTest do
     assert e.message =~ "aws login --profile prod"
   end
 
+  test "a warning on stderr does not break the credentials", %{dir: dir} do
+    fake_aws(
+      dir,
+      ~s(echo 'warning: new version' >&2; echo '{"AccessKeyId":"AKIA2","SecretAccessKey":"s"}')
+    )
+
+    assert {:ok, opts} = AwsCredentials.opts("dev")
+    assert opts[:access_key_id] == "AKIA2"
+  end
+
+  test "an S3 source with a failing profile shows the profile error, not other keys", %{dir: dir} do
+    fake_aws(dir, "echo 'expired' >&2; exit 255")
+    System.put_env("AWS_ACCESS_KEY_ID", "other-account")
+    on_exit(fn -> System.delete_env("AWS_ACCESS_KEY_ID") end)
+
+    e =
+      assert_raise PulumiViewer.CloudFormation.Error, fn ->
+        PulumiViewer.Storage.S3.list(%{bucket: "b", prefix: nil, profile: "prod"}, ".pulumi/")
+      end
+
+    assert e.message =~ "aws login --profile prod"
+  end
+
   test "no profile uses the keys in the environment" do
     assert {:ok, opts} = AwsCredentials.opts(nil)
     assert is_list(opts)

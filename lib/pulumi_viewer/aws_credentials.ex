@@ -21,7 +21,7 @@ defmodule PulumiViewer.AwsCredentials do
   def opts(profile) do
     case System.find_executable("aws") do
       nil -> {:ok, for(k <- @keys, do: {k, [{:awscli, profile, 30}]})}
-      aws -> cached(profile, fn -> export(aws, profile) end)
+      aws -> cached(profile, fn -> export_with_timeout(aws, profile) end)
     end
   end
 
@@ -54,12 +54,23 @@ defmodule PulumiViewer.AwsCredentials do
     end
   end
 
+  # a profile that prompts (MFA, interactive credential_process) must not block the page
+  defp export_with_timeout(aws, profile) do
+    task = Task.async(fn -> export(aws, profile) end)
+
+    case Task.yield(task, 20_000) || Task.shutdown(task, :brutal_kill) do
+      {:ok, result} -> result
+      _ -> {:error, profile_error(profile, "the aws CLI did not answer within 20 s")}
+    end
+  end
+
   defp export(aws, profile) do
     args = ["configure", "export-credentials", "--profile", profile, "--format", "process"]
 
     case System.cmd(aws, args, stderr_to_stdout: true) do
       {out, 0} ->
-        case Jason.decode(out) do
+        # stderr is mixed in (a warning or notice); keep only the JSON object
+        case out |> json_part() |> Jason.decode() do
           {:ok, %{"AccessKeyId" => key, "SecretAccessKey" => secret} = c} ->
             opts = [
               access_key_id: key,
@@ -76,6 +87,13 @@ defmodule PulumiViewer.AwsCredentials do
       {out, _} ->
         {:error,
          profile_error(profile, out |> String.trim() |> String.split("\n") |> List.last())}
+    end
+  end
+
+  defp json_part(out) do
+    case Regex.run(~r/\{.*\}/s, out) do
+      [json] -> json
+      _ -> out
     end
   end
 

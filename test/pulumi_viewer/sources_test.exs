@@ -52,6 +52,42 @@ defmodule PulumiViewer.SourcesTest do
            ] = Storage.sources()
   end
 
+  test "a comma inside a query value stays in its URL" do
+    Application.put_env(
+      :pulumi_viewer,
+      :backend_urls,
+      "dev=cloudformation://us-east-1?prefix=a,b&profile=p,local=file://test/fixtures/state"
+    )
+
+    assert [%{name: "dev", cfg: %{prefix: "a,b", profile: "p"}}, %{name: "local"}] =
+             Storage.sources()
+  end
+
+  test "an unknown URL or a duplicate name is an error of that source only" do
+    Application.put_env(
+      :pulumi_viewer,
+      :backend_urls,
+      "ok=file://test/fixtures/state,typo=ftp://x,ok=file://other"
+    )
+
+    assert [
+             %{name: "ok", mod: PulumiViewer.Storage.Local},
+             %{name: "typo", error: e1},
+             %{name: "ok", error: e2}
+           ] = Storage.sources()
+
+    assert e1 =~ "ftp://x"
+    assert e2 =~ "duplicate"
+    assert [_] = PulumiViewer.Infra.list_stacks!("ok")
+    assert {:error, _} = PulumiViewer.Infra.list_stacks("typo")
+  end
+
+  test "an empty list falls back to PULUMI_BACKEND_URL" do
+    Application.put_env(:pulumi_viewer, :backend_urls, ",")
+    Application.put_env(:pulumi_viewer, :backend_url, "file://test/fixtures/state")
+    assert [%{name: "default"}] = Storage.sources()
+  end
+
   test "a single PULUMI_BACKEND_URL is one source named default" do
     Application.delete_env(:pulumi_viewer, :backend_urls)
     Application.put_env(:pulumi_viewer, :backend_url, "file://test/fixtures/state")

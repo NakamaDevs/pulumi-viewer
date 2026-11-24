@@ -33,8 +33,15 @@ defmodule PulumiViewer.Infra.Stack.Read do
     source = PulumiViewer.Storage.source(query.arguments[:source])
 
     with true <- source != nil || {:error, :unknown_source},
-         {:ok, stacks} <- State.stacks(source.name) do
+         {:ok, stacks} <- source_stacks(source) do
       read_all(source.name, stacks)
+    end
+  end
+
+  defp source_stacks(source) do
+    case State.stacks(source.name) do
+      {:error, %PulumiViewer.CloudFormation.Error{} = e} -> {:error, e}
+      other -> other
     end
   end
 

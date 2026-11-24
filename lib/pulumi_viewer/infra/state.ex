@@ -7,6 +7,7 @@ defmodule PulumiViewer.Infra.State do
   def stacks(source_name) do
     case Storage.source(source_name) do
       nil -> {:error, :unknown_source}
+      %{error: why} when is_binary(why) -> {:error, %CloudFormation.Error{message: why}}
       %{mod: CloudFormation, cfg: cfg} -> CloudFormation.stacks(cfg)
       src -> {:ok, Storage.list(src, ".pulumi/stacks/") |> Layout.stacks()}
     end
@@ -16,6 +17,9 @@ defmodule PulumiViewer.Infra.State do
     case Storage.source(source_name) do
       nil ->
         {:error, :not_found}
+
+      %{error: why} when is_binary(why) ->
+        {:error, %CloudFormation.Error{message: why}}
 
       %{mod: CloudFormation, cfg: cfg} ->
         CloudFormation.checkpoint(cfg, stack)
@@ -33,6 +37,7 @@ defmodule PulumiViewer.Infra.State do
   def updates(source_name, project, stack, limit \\ 50) do
     case Storage.source(source_name) do
       nil -> []
+      %{error: why} when is_binary(why) -> []
       %{mod: CloudFormation, cfg: cfg} -> CloudFormation.updates(cfg, stack, limit)
       src -> pulumi_updates(src, project, stack, limit)
     end

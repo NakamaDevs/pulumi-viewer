@@ -11,13 +11,26 @@ defmodule PulumiViewerWeb.StacksLive do
 
   # Every source loads at the same time; one that fails shows its own error.
   defp load(socket) do
+    sources = PulumiViewer.Storage.sources()
+
     sources =
-      PulumiViewer.Storage.sources()
-      |> Task.async_stream(&load_source/1, timeout: 120_000, ordered: true)
-      |> Enum.map(fn {:ok, s} -> s end)
+      sources
+      |> Task.async_stream(&load_source/1,
+        timeout: 120_000,
+        on_timeout: :kill_task,
+        ordered: true
+      )
+      |> Enum.zip(sources)
+      |> Enum.map(fn
+        {{:ok, s}, _src} -> s
+        {{:exit, _}, src} -> failed(src, "#{src.name} did not answer within 120 s.")
+      end)
 
     assign(socket, sources: sources, multiple?: length(sources) > 1)
   end
+
+  # a bad URL or a duplicate name: show the config error, do not read another source by name
+  defp load_source(%{error: why} = src) when is_binary(why), do: failed(src, why)
 
   defp load_source(src) do
     case PulumiViewer.Infra.list_stacks(src.name) do
@@ -30,9 +43,14 @@ defmodule PulumiViewerWeb.StacksLive do
         }
 
       {:error, e} ->
-        %{name: src.name, url: src.url, error: PulumiViewer.error_message(e), stacks: %{}}
+        failed(src, PulumiViewer.error_message(e))
     end
+  rescue
+    # a source that raises (for example S3 without access) must not take down the page
+    e -> failed(src, PulumiViewer.error_message(e))
   end
+
+  defp failed(src, message), do: %{name: src.name, url: src.url, error: message, stacks: %{}}
 
   # keep single-source links short: /stacks/demo/dev
   defp source_query(true, source), do: [source: source]
