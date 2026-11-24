@@ -66,6 +66,24 @@ The backend URL uses the same form as `pulumi login`. The viewer only lists and 
 | `.pulumi/stacks/<stack>.json[.gz]` | legacy (non project-scoped) stacks |
 | `.pulumi/history/<project>/<stack>/*.history.json` | update history |
 
+### CloudFormation source
+
+Infrastructure in CloudFormation, not Pulumi? Set
+`PULUMI_BACKEND_URL=cloudformation://<region>` (optionally `?prefix=<stack name prefix>`).
+The same pages then show live CloudFormation stacks, read-only:
+
+| Viewer | CloudFormation |
+| --- | --- |
+| project / stack | stack name before the first `-` / stack name (`ListStacks`, live stacks only) |
+| resources | `ListStackResources`; inputs are the `Properties` from `GetTemplate` (JSON or YAML with `!Ref`, `!GetAtt`, `!Sub` ...) |
+| graph edges | `Ref`, `Fn::GetAtt`, `Fn::Sub` references and `DependsOn` |
+| stack node outputs | stack outputs (`DescribeStacks`) |
+| history | `DescribeStackEvents`, one row per stack operation |
+
+It needs only `cloudformation:ListStacks`, `DescribeStacks`, `ListStackResources`,
+`DescribeStackEvents` and `GetTemplate`. Responses are cached for 60 s; throttled calls are
+retried with backoff. Missing or expired credentials show a clear message.
+
 Tidewave is optional and dev only. Turn it off with `TIDEWAVE=false mise run serve`.
 
 ## Screenshots and video

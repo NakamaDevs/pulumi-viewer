@@ -1,0 +1,5 @@
+{"Resources": {
+  "Role": {"Type": "AWS::IAM::Role", "Properties": {"RoleName": {"Fn::Sub": "r-${AWS::Region}"}}},
+  "Fn": {"Type": "AWS::Lambda::Function", "DependsOn": ["Role"],
+         "Properties": {"Role": {"Fn::GetAtt": ["Role", "Arn"]}, "Env": {"Ref": "AWS::StackName"}}}
+}}

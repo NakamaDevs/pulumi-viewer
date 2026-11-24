@@ -3,6 +3,9 @@ defmodule PulumiViewer.Storage do
   Read-only access to a Pulumi DIY backend. The URL uses the same form as
   `pulumi login`: `file://<dir>` or `s3://<bucket>[/<prefix>]`. For an AWS
   emulator (Floci, LocalStack, AWS Emulator) set `AWS_ENDPOINT_URL`.
+
+  `cloudformation://<region>[?prefix=<p>]` is not a Pulumi backend: it reads live
+  CloudFormation stacks instead (see `PulumiViewer.CloudFormation`).
   """
 
   @callback list(config :: term, prefix :: String.t()) :: [String.t()]
@@ -15,6 +18,9 @@ defmodule PulumiViewer.Storage do
     [bucket | prefix] = rest |> String.split("?") |> hd() |> String.split("/", parts: 2)
     {PulumiViewer.Storage.S3, %{bucket: bucket, prefix: prefix |> List.first() |> blank()}}
   end
+
+  def parse_url("cloudformation://" <> rest),
+    do: {PulumiViewer.CloudFormation, PulumiViewer.CloudFormation.parse_url(rest)}
 
   def current, do: parse_url(Application.fetch_env!(:pulumi_viewer, :backend_url))
 

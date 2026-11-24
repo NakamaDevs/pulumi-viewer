@@ -14,7 +14,7 @@ defmodule PulumiViewerWeb.StackLive do
 
     case Infra.list_resources(project, stack) do
       {:ok, resources} -> {:ok, socket |> assign(resources: resources, missing: false) |> graph()}
-      {:error, _} -> {:ok, assign(socket, resources: [], missing: true, graph_json: "{}")}
+      {:error, e} -> {:ok, assign(socket, resources: [], missing: problem(e), graph_json: "{}")}
     end
   end
 
@@ -35,6 +35,12 @@ defmodule PulumiViewerWeb.StackLive do
 
   def handle_event("select", %{"urn" => urn}, socket) do
     {:noreply, assign(socket, selected: Enum.find(socket.assigns.resources, &(&1.urn == urn)))}
+  end
+
+  # a source error (for example expired AWS credentials) is more useful than "not found"
+  defp problem(e) do
+    msg = PulumiViewer.error_message(e)
+    if msg =~ "not_found", do: "Stack not found.", else: msg
   end
 
   defp graph(socket) do
@@ -88,7 +94,7 @@ defmodule PulumiViewerWeb.StackLive do
         </ul>
       </div>
 
-      <div :if={@missing} class="alert alert-warning">Stack not found.</div>
+      <div :if={@missing} class="alert alert-warning">{@missing}</div>
 
       <div :if={!@missing} class="space-y-4">
         <div class="flex items-center gap-2">

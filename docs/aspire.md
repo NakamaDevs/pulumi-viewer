@@ -16,7 +16,7 @@ or Node. To run your own changes, build the `Dockerfile` at the repository root 
 
 | Variable | Default | Use |
 | --- | --- | --- |
-| `PULUMI_BACKEND_URL` | bundled demo state | `s3://<bucket>[/prefix]` or `file://<dir>`, same form as `pulumi login` |
+| `PULUMI_BACKEND_URL` | bundled demo state | `s3://<bucket>[/prefix]` or `file://<dir>`, same form as `pulumi login`; or `cloudformation://<region>[?prefix=<p>]` for live CloudFormation stacks |
 | `AWS_REGION` | `us-east-1` | region of the state bucket |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN` | none | credentials; or an instance role on EC2/ECS |
 | `AWS_ENDPOINT_URL` (or `AWS_ENDPOINT_URL_S3`) | none | S3 on an emulator: Floci, LocalStack, AWS Emulator |
@@ -27,6 +27,9 @@ The viewer needs only `s3:ListBucket` and `s3:GetObject` on the state bucket. Se
 encrypted and show as `[secret]`. Tidewave is not in the image; it runs only with `mix phx.server`
 in dev (turn it off there with `TIDEWAVE=false`).
 
+For `cloudformation://`, the viewer needs only `cloudformation:ListStacks`, `DescribeStacks`,
+`ListStackResources`, `DescribeStackEvents` and `GetTemplate`.
+
 ## Docker
 
 ```sh
@@ -35,6 +38,11 @@ docker tag ghcr.io/nakamadevs/pulumi-viewer:latest pulumi-viewer   # or: docker 
 
 # demo state
 docker run --rm -p 4000:4000 pulumi-viewer
+
+# live CloudFormation stacks (read-only)
+eval "$(aws configure export-credentials --profile my-readonly --format env)"
+docker run --rm -p 4000:4000 -e PULUMI_BACKEND_URL=cloudformation://us-east-1 \
+  -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_SESSION_TOKEN pulumi-viewer
 
 # a real bucket, with credentials from an AWS CLI (also SSO) profile
 eval "$(aws configure export-credentials --profile my-readonly --format env)"

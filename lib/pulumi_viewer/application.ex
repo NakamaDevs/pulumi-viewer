@@ -11,6 +11,7 @@ defmodule PulumiViewer.Application do
       PulumiViewerWeb.Telemetry,
       {DNSCluster, query: Application.get_env(:pulumi_viewer, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: PulumiViewer.PubSub},
+      PulumiViewer.CloudFormation.Cache,
       # Start a worker by calling: PulumiViewer.Worker.start_link(arg)
       # {PulumiViewer.Worker, arg},
       # Start to serve requests, typically the last entry
