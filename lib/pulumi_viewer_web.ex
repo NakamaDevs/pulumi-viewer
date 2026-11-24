@@ -49,6 +49,7 @@ defmodule PulumiViewerWeb do
   def live_view do
     quote do
       use Phoenix.LiveView
+      on_mount PulumiViewerWeb.PrefsHook
 
       unquote(html_helpers())
     end
@@ -81,6 +82,7 @@ defmodule PulumiViewerWeb do
       import Phoenix.HTML
       # Core UI components
       import PulumiViewerWeb.CoreComponents
+      import PulumiViewerWeb.Dashboard, warn: false
 
       # Common modules used in templates
       alias Phoenix.LiveView.JS

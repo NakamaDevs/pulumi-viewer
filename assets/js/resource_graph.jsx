@@ -10,22 +10,29 @@ const W = 220, H = 64
 const PALETTE = {aws: "#f59e0b", pulumi: "#8b5cf6", kubernetes: "#3b82f6", random: "#10b981", command: "#64748b"}
 const color = pkg => PALETTE[pkg] || "#0ea5e9"
 
+// Node look of the dashboard graph: a card with a round icon tinted by provider,
+// the name and the type. The selected node gets the accent ring.
 function ResourceNode({data, selected}) {
+  const c = color(data.package)
   return (
-    <div className={`rounded-lg border bg-base-100 px-3 py-2 shadow-sm text-xs w-[220px] ${selected ? "ring-2 ring-primary" : "border-base-300"}`}
-         style={{borderLeft: `4px solid ${color(data.package)}`}}>
-      <Handle type="target" position={Position.Left} className="!bg-base-300" />
-      <div className="font-semibold truncate">{data.protect ? "🔒 " : ""}{data.label}</div>
-      <div className="opacity-60 truncate font-mono">{data.type}</div>
-      <Handle type="source" position={Position.Right} className="!bg-base-300" />
+    <div className={`flex items-center gap-2 rounded-lg border bg-base-100 px-2.5 py-2 text-xs w-[220px] shadow-sm ${selected ? "border-primary ring-2 ring-primary/40" : "border-base-300"}`}>
+      <Handle type="target" position={Position.Left} className="!bg-base-300 !border-0" />
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white" style={{background: c}}>
+        {(data.package || "?").slice(0, 3)}
+      </span>
+      <div className="min-w-0">
+        <div className="font-semibold truncate text-[13px]">{data.protect ? "🔒 " : ""}{data.label}</div>
+        <div className="opacity-70 truncate font-mono text-[11px]">{data.type}</div>
+      </div>
+      <Handle type="source" position={Position.Right} className="!bg-base-300 !border-0" />
     </div>
   )
 }
 
 const nodeTypes = {resource: ResourceNode}
 const EDGE = {
-  parent: {stroke: "#94a3b8", strokeDasharray: "4 4"},
-  dependency: {stroke: "#0ea5e9"},
+  parent: {stroke: "#a3a3a3", strokeDasharray: "4 4"},
+  dependency: {stroke: "#7c5ce0"},
   provider: {stroke: "#8b5cf6", strokeDasharray: "2 3"},
 }
 

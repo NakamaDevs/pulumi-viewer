@@ -25,17 +25,19 @@ import {LiveSocket} from "phoenix_live_view"
 import {hooks as colocatedHooks} from "phoenix-colocated/pulumi_viewer"
 import {ResourceGraph} from "./resource_graph.jsx"
 import {CodeBlock} from "./code_block.js"
+import {Settings, Splitter, readPrefs, applyPrefs} from "./settings.js"
 import topbar from "../vendor/topbar"
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
+applyPrefs(readPrefs())
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
-  params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks, ResourceGraph, CodeBlock},
+  params: () => ({_csrf_token: csrfToken, prefs: readPrefs()}),
+  hooks: {...colocatedHooks, ResourceGraph, CodeBlock, Settings, Splitter},
 })
 
 // Show progress bar on live navigation and form submits
-topbar.config({barColors: {0: "#29d"}, shadowColor: "rgba(0, 0, 0, .3)"})
+topbar.config({barColors: {0: "#512bd4"}, shadowColor: "rgba(0, 0, 0, .3)"})
 window.addEventListener("phx:page-loading-start", _info => topbar.show(300))
 window.addEventListener("phx:page-loading-stop", _info => topbar.hide())
 
@@ -83,3 +85,9 @@ if (process.env.NODE_ENV === "development") {
   })
 }
 
+
+// Copy buttons of the details sections.
+window.addEventListener("pv:copy", e => {
+  const text = e.target.closest("[data-copy]")?.dataset.copy
+  if (text && navigator.clipboard) navigator.clipboard.writeText(text).catch(() => {})
+})

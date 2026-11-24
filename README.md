@@ -15,19 +15,22 @@ What you can do with it:
 - **Read the update history**: each `pulumi up` with its result, change counts and message.
 - **Use real AWS or an emulator** (Floci, LocalStack, AWS Emulator) with the same code.
 - **Run it anywhere**: one Docker image, or as a resource in an Aspire AppHost (C#, TypeScript or Go).
+- **A familiar dashboard layout**: top tabs (Stacks, Resources, History), tree lists with expand and collapse, a Table / Graph switch and a resizable details panel beside or below the list. The settings (theme, density, first view, panel position) stay in your browser.
 - **Stay safe**: it only lists and reads objects. It never writes state or calls `pulumi`.
 
 ![Demo: stacks, graph, resource details, search and history](docs/media/demo.gif)
 
-[Watch the demo video (MP4, 12 s)](docs/media/demo.mp4)
+[Watch the demo video (MP4)](docs/media/demo.mp4)
 
 | Stacks | Resource graph |
 | --- | --- |
 | ![Stacks](docs/media/stacks.png) | ![Graph](docs/media/graph.png) |
-| **Resource details** | **Search** |
+| **Resource details** | **Search, details below** |
 | ![Details](docs/media/details.png) | ![Resources](docs/media/resources.png) |
-| **Update history** | **Light theme** |
-| ![History](docs/media/history.png) | ![Light theme](docs/media/graph-light.png) |
+| **All resources** | **Update history** |
+| ![All resources](docs/media/all-resources.png) | ![History](docs/media/history.png) |
+| **Settings** | **Light theme** |
+| ![Settings](docs/media/settings.png) | ![Light theme](docs/media/graph-light.png) |
 
 ## Quick start (Docker)
 
