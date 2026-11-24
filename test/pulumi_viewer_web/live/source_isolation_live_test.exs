@@ -57,6 +57,8 @@ defmodule PulumiViewerWeb.SourceIsolationLiveTest do
     Application.put_env(:pulumi_viewer, :sources, "broken=readraise://x")
     {:ok, view, _} = live(conn, ~p"/sources/broken/stacks/bundle/dev")
     assert render(view) =~ "Cannot read the state"
+    render_click(view, "tab", %{"tab" => "history"})
+    assert Process.alive?(view.pid)
   end
 
   test "a bad PULUMI_VIEWER_SOURCES is rejected by the startup check" do

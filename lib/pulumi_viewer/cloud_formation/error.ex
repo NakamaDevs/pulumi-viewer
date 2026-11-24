@@ -12,7 +12,6 @@ defmodule PulumiViewer.CloudFormation.Error do
   def from({:raised, msg}) do
     case PulumiViewer.CloudFormation.Client.credential_source() do
       {:profile, _} -> credentials("AWS credentials could not be read (#{msg}).")
-      :container_full_uri -> credentials("AWS credentials could not be read (#{msg}).")
       _ -> %__MODULE__{message: "CloudFormation read failed: #{msg}"}
     end
   end
