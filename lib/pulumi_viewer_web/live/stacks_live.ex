@@ -1,10 +1,14 @@
 defmodule PulumiViewerWeb.StacksLive do
   use PulumiViewerWeb, :live_view
-  alias PulumiViewer.{Environment, Sources}
+  alias PulumiViewer.Environment
 
   @impl true
   def mount(_params, _session, socket) do
-    {:ok, socket |> assign(page_title: "Stacks") |> assign_filter("all", "all") |> load()}
+    {:ok,
+     socket
+     |> assign(page_title: "Stacks", q: "", collapsed: MapSet.new())
+     |> assign_filter("all", "all")
+     |> load()}
   end
 
   @impl true
@@ -13,45 +17,31 @@ defmodule PulumiViewerWeb.StacksLive do
   def handle_event("filter", params, socket),
     do:
       {:noreply,
-       assign_filter(
-         socket,
+       socket
+       |> assign(q: params["q"] || socket.assigns.q)
+       |> assign_filter(
          params["env"] || socket.assigns.env,
          params["source"] || socket.assigns.source
        )}
+
+  def handle_event("toggle_group", %{"group" => g}, socket) do
+    collapsed = socket.assigns.collapsed
+
+    collapsed =
+      if g in collapsed, do: MapSet.delete(collapsed, g), else: MapSet.put(collapsed, g)
+
+    {:noreply, assign(socket, collapsed: collapsed)}
+  end
 
   defp assign_filter(socket, env, source) do
     assign(socket,
       env: env,
       source: source,
-      filter_form: to_form(%{"env" => env, "source" => source})
+      filter_form: to_form(%{"env" => env, "source" => source, "q" => socket.assigns.q})
     )
   end
 
-  # Each source loads on its own, so one failing source does not hide the others.
-  defp load(socket) do
-    results =
-      Task.Supervisor.async_stream_nolink(
-        PulumiViewer.TaskSupervisor,
-        Sources.all(),
-        fn s ->
-          case PulumiViewer.Infra.list_stacks(s.name) do
-            {:ok, stacks} -> {s, {:ok, stacks}}
-            {:error, e} -> {s, {:error, PulumiViewer.error_message(e)}}
-          end
-        end,
-        max_concurrency: 4,
-        timeout: 120_000,
-        on_timeout: :kill_task
-      )
-      |> Enum.zip(Sources.all())
-      |> Enum.map(fn
-        {{:ok, r}, _} -> r
-        {{:exit, :timeout}, s} -> {s, {:error, "Timed out while reading this source."}}
-        {{:exit, reason}, s} -> {s, {:error, "Read failed: #{inspect(reason)}"}}
-      end)
-
-    assign(socket, results: results)
-  end
+  defp load(socket), do: assign(socket, results: PulumiViewerWeb.SourceResults.load())
 
   @doc false
   # [{group, [{source_name, [{project, [stack]}]}]}], environments first, then "Account-wide"
@@ -88,11 +78,14 @@ defmodule PulumiViewerWeb.StacksLive do
   defp env_value(:account), do: "account"
   defp env_value({:env, e}), do: e
 
-  defp visible(results, env, source) do
+  defp visible(results, env, source, q) do
+    q = String.downcase(q || "")
+
     for {s, {:ok, stacks}} <- results,
         source in ["all", s.name],
         st <- stacks,
         env == "all" or env_value(group(st)) == env,
+        q == "" or String.contains?(String.downcase("#{st.name} #{st.project} #{st.source}"), q),
         do: st
   end
 
@@ -103,121 +96,167 @@ defmodule PulumiViewerWeb.StacksLive do
     |> Enum.map(&{group_label(&1), env_value(&1)})
   end
 
-  defp kind_label(:cloudformation), do: "CloudFormation"
-  defp kind_label(_), do: "Pulumi"
+  defp rows(by_source),
+    do: for({src, projects} <- by_source, {p, stacks} <- projects, s <- stacks, do: {src, p, s})
 
-  defp env_tag({_, v}), do: v
-
-  defp select_class,
+  defp count(by_source),
     do:
-      "rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:bg-zinc-900 dark:border-zinc-700"
-
-  defp stack_path(s), do: ~p"/sources/#{s.source}/stacks/#{s.project || "_"}/#{s.name}"
+      for(
+        {_, projects} <- by_source,
+        {_, stacks} <- projects,
+        reduce: 0,
+        do: (n -> n + length(stacks))
+      )
 
   @impl true
   def render(assigns) do
     assigns =
       assign(assigns,
-        groups: grouped(visible(assigns.results, assigns.env, assigns.source)),
+        groups: grouped(visible(assigns.results, assigns.env, assigns.source, assigns.q)),
         env_options: env_options(assigns.results)
       )
 
     ~H"""
-    <Layouts.app flash={@flash}>
-      <div class="flex flex-wrap items-center justify-between gap-2">
-        <h1 class="text-xl font-semibold">Stacks</h1>
-        <.form for={@filter_form} id="filters" phx-change="filter" class="flex gap-2">
-          <select
-            id={@filter_form[:env].id}
-            name={@filter_form[:env].name}
-            class={select_class()}
-            aria-label="Environment"
+    <Layouts.app flash={@flash} active={:stacks} prefs={@prefs}>
+      <.form
+        for={@filter_form}
+        id="filters"
+        phx-change="filter"
+        class="flex flex-wrap items-center gap-2 pb-2"
+      >
+        <div class="relative flex-1 min-w-[220px]">
+          <.icon name="hero-magnifying-glass" class="size-4 absolute left-2.5 top-2 opacity-60" />
+          <input
+            name="q"
+            value={@q}
+            placeholder="Filter..."
+            class="pv-input"
+            phx-debounce="150"
+            aria-label="Filter"
+            autocomplete="off"
+          />
+        </div>
+        <select
+          id={@filter_form[:env].id}
+          name={@filter_form[:env].name}
+          class="pv-select"
+          aria-label="Environment"
+        >
+          <option value="all" selected={@filter_form[:env].value == "all"}>All environments</option>
+          <option :for={{label, v} <- @env_options} value={v} selected={@filter_form[:env].value == v}>
+            {label}
+          </option>
+        </select>
+        <select
+          id={@filter_form[:source].id}
+          name={@filter_form[:source].name}
+          class="pv-select"
+          aria-label="Source"
+        >
+          <option value="all" selected={@filter_form[:source].value == "all"}>All sources</option>
+          <option
+            :for={{s, _} <- @results}
+            value={s.name}
+            selected={@filter_form[:source].value == s.name}
           >
-            <option value="all" selected={@filter_form[:env].value == "all"}>All environments</option>
-            <option
-              :for={{label, v} <- @env_options}
-              value={v}
-              selected={@filter_form[:env].value == v}
-            >
-              {label}
-            </option>
-          </select>
-          <select
-            id={@filter_form[:source].id}
-            name={@filter_form[:source].name}
-            class={select_class()}
-            aria-label="Source"
-          >
-            <option value="all" selected={@filter_form[:source].value == "all"}>All sources</option>
-            <option
-              :for={{s, _} <- @results}
-              value={s.name}
-              selected={@filter_form[:source].value == s.name}
-            >
-              {s.name}
-            </option>
-          </select>
-          <button type="button" class="btn btn-sm" phx-click="refresh">
-            <.icon name="hero-arrow-path" class="size-4" /> Refresh
-          </button>
-        </.form>
-      </div>
+            {s.name}
+          </option>
+        </select>
+        <button
+          type="button"
+          class="pv-icon-btn border border-base-300 bg-base-100"
+          phx-click="refresh"
+          title="Refresh"
+          aria-label="Refresh"
+        >
+          <.icon name="hero-arrow-path" class="size-4" />
+        </button>
+      </.form>
 
       <div
         :for={{s, {:error, msg}} <- @results}
         id={"source-error-#{s.name}"}
-        class="alert alert-error flex-col items-start"
+        class="pv-card mb-2 flex items-start gap-3 border-l-4 !border-l-error px-4 py-3"
+        role="alert"
       >
-        <div class="font-semibold">{s.name} <span class="font-mono text-xs">{s.url}</span></div>
-        <div>{msg}</div>
+        <.icon name="hero-exclamation-circle" class="size-5 text-error shrink-0" />
+        <div>
+          <div class="font-semibold">
+            {s.name} <span class="font-mono text-xs opacity-75">{s.url}</span>
+          </div>
+          <div>{msg}</div>
+        </div>
       </div>
 
       <p
         :for={{s, {:ok, []}} <- @results}
         id={"source-empty-#{s.name}"}
-        class="opacity-60"
+        class="pv-card mb-2 px-4 py-3 opacity-75"
       >
         No stacks found in <code>{s.name}</code> (<code>{s.url}</code>).
       </p>
 
-      <section :for={{g, by_source} <- @groups} id={"group-#{env_value(g)}"} class="space-y-3">
-        <h2 class="text-lg font-semibold">{group_label(g)}</h2>
-        <div :for={{src, projects} <- by_source} class="space-y-2 pl-2">
-          <div :for={{project, stacks} <- projects} class="space-y-2">
-            <h3 class="text-sm uppercase tracking-wide opacity-60">{src} · {project}</h3>
-            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <.link
-                :for={s <- stacks}
-                navigate={stack_path(s)}
-                class="card bg-base-200 hover:bg-base-300 transition p-4"
-              >
-                <div class="flex items-center justify-between gap-2">
-                  <span class="font-semibold truncate">{s.name}</span>
-                  <span class="badge badge-sm badge-outline">{env_tag(s.environment)}</span>
-                </div>
-                <div class="text-sm opacity-70">
-                  {s.resource_count} resources
-                  <span
-                    data-kind={s.kind}
-                    class={[
-                      "badge badge-xs ml-1",
-                      if(s.kind == :cloudformation, do: "badge-warning", else: "badge-info")
-                    ]}
-                  >
-                    {kind_label(s.kind)}
-                  </span>
-                </div>
-                <div :if={s.error} class="text-xs text-error">{s.error}</div>
-                <div class="text-xs opacity-50">
-                  {if s.updated_at,
-                    do: Calendar.strftime(s.updated_at, "%Y-%m-%d %H:%M UTC"),
-                    else: "never updated"} · {s.pulumi_version}
-                </div>
-              </.link>
-            </div>
-          </div>
+      <div class="pv-card overflow-hidden" role="treegrid" aria-label="Stacks">
+        <div class="flex items-center gap-2 border-b border-base-300 px-3 py-2">
+          <span class="pv-section-title">Stacks</span>
+          <span class="pv-count">{@groups |> Enum.map(fn {_, bs} -> count(bs) end) |> Enum.sum()}</span>
         </div>
-      </section>
+        <p :if={@groups == []} class="px-4 py-6 text-center opacity-70">
+          No stacks match the filter.
+        </p>
+        <section :for={{g, by_source} <- @groups} id={"group-#{env_value(g)}"}>
+          <div
+            class="pv-row bg-base-200/60"
+            data-group-toggle
+            phx-click="toggle_group"
+            phx-value-group={env_value(g)}
+            role="row"
+            aria-expanded={to_string(env_value(g) not in @collapsed)}
+          >
+            <.icon
+              name={
+                if env_value(g) in @collapsed,
+                  do: "hero-chevron-right-mini",
+                  else: "hero-chevron-down-mini"
+              }
+              class="size-4"
+            />
+            <.icon
+              name={if g == :account, do: "hero-globe-alt", else: "hero-folder"}
+              class="size-4 text-primary"
+            />
+            <h2 class="font-semibold">{group_label(g)}</h2>
+            <span class="pv-count">{count(by_source)}</span>
+          </div>
+          <div
+            :for={{src, project, s} <- rows(by_source)}
+            :if={env_value(g) not in @collapsed}
+            data-row="stack"
+          >
+            <.link navigate={stack_path(s)} class="pv-row" role="row">
+              <span class="pv-indent"></span>
+              <.icon name="hero-rectangle-stack" class="size-4 text-primary shrink-0" />
+              <span class="font-semibold truncate w-48 max-sm:w-28">{s.name}</span>
+              <span class="text-xs opacity-75 truncate w-48 max-md:hidden">{src} · {project}</span>
+              <span class="flex items-center gap-1.5 text-xs w-32" title={s.error || "Read"}>
+                <.dot state={if s.error, do: "error", else: "ok"} />
+                <span class="max-sm:hidden">{if s.error,
+                  do: "Error",
+                  else: "#{s.resource_count} resources"}</span>
+              </span>
+              <span class="pv-badge bg-base-200 max-sm:hidden">{env_label(s.environment)}</span>
+              <span data-kind={s.kind} class="pv-badge">{kind_label(s.kind)}</span>
+              <span class="flex items-center gap-1 text-xs opacity-75 w-40 max-lg:hidden">
+                <.icon name="hero-clock" class="size-3.5" /> {time(s.updated_at)}
+              </span>
+              <span class="text-xs opacity-60 w-14 max-xl:hidden">{s.pulumi_version}</span>
+              <span class="flex-1"></span>
+              <.icon name="hero-chevron-right" class="size-4 opacity-60" />
+            </.link>
+            <div :if={s.error} class="px-12 pb-2 text-xs text-error">{s.error}</div>
+          </div>
+        </section>
+      </div>
     </Layouts.app>
     """
   end

@@ -12,6 +12,8 @@ defmodule PulumiViewerWeb.StacksLiveTest do
 
   test "stack page shows graph, resources, history and a detail panel", %{conn: conn} do
     {:ok, view, html} = live(conn, ~p"/stacks/demo/dev")
+    # the table is the first view, like the dashboard; the toggle opens the graph
+    view |> element(~s|button[phx-value-tab="graph"]|) |> render_click()
     assert has_element?(view, ~s|#graph[phx-hook="ResourceGraph"]|)
     assert html =~ "aws:s3/bucketV2:BucketV2"
 

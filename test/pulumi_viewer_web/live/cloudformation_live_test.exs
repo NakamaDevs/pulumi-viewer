@@ -34,6 +34,8 @@ defmodule PulumiViewerWeb.CloudFormationLiveTest do
   test "stack page shows the graph, the stack outputs and the history", %{conn: conn} do
     {:ok, view, html} = live(conn, ~p"/stacks/web/web-prod")
     assert html =~ "AWS::Lambda::Function"
+    # the table is the first view, like the dashboard; the toggle opens the graph
+    view |> element(~s|button[phx-value-tab="graph"]|) |> render_click()
     assert has_element?(view, ~s|#graph[phx-hook="ResourceGraph"]|)
 
     html = view |> element(~s|button[phx-value-tab="history"]|) |> render_click()

@@ -18,6 +18,8 @@ defmodule PulumiViewerWeb.Router do
     pipe_through :browser
 
     live "/", StacksLive
+    live "/resources", ResourcesLive
+    live "/history", HistoryLive
     live "/sources/:source/stacks/:project/:stack", StackLive
     # one source (or the first one): the route before sources existed
     live "/stacks/:project/:stack", StackLive

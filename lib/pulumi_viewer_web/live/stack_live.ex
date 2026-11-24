@@ -13,7 +13,8 @@ defmodule PulumiViewerWeb.StackLive do
           socket
           |> assign(project: project, stack: stack, source: src)
           |> assign(page_title: "#{src.name}/#{project}/#{stack}")
-          |> assign(tab: "graph", q: "", selected: nil, providers: false, updates: nil)
+          |> assign(tab: start_tab(socket), q: "", selected: nil, providers: false, updates: nil)
+          |> assign(collapsed: MapSet.new(), selected_update: nil)
           |> assign_links(src)
 
         case Infra.list_resources(project, stack, src.name) do
@@ -31,7 +32,9 @@ defmodule PulumiViewerWeb.StackLive do
            stack: stack,
            source: %{name: params["source"], kind: nil},
            page_title: stack,
-           tab: "graph",
+           tab: "resources",
+           collapsed: MapSet.new(),
+           selected_update: nil,
            resources: [],
            selected: nil,
            providers: false,
@@ -72,15 +75,49 @@ defmodule PulumiViewerWeb.StackLive do
     {:noreply, assign(socket, tab: "history", updates: updates)}
   end
 
-  def handle_event("tab", %{"tab" => tab}, socket), do: {:noreply, assign(socket, tab: tab)}
+  def handle_event("tab", %{"tab" => "list"}, socket),
+    do: {:noreply, assign(socket, tab: start_tab(socket))}
+
+  def handle_event("tab", %{"tab" => tab}, socket) when tab in ["graph", "resources"],
+    do: {:noreply, assign(socket, tab: tab)}
+
   def handle_event("filter", %{"q" => q}, socket), do: {:noreply, assign(socket, q: q)}
-  def handle_event("close", _, socket), do: {:noreply, assign(socket, selected: nil)}
+
+  def handle_event("close", _, socket),
+    do: {:noreply, assign(socket, selected: nil, selected_update: nil)}
+
+  def handle_event("toggle", %{"urn" => urn}, socket) do
+    c = socket.assigns.collapsed
+
+    {:noreply,
+     assign(socket, collapsed: if(urn in c, do: MapSet.delete(c, urn), else: MapSet.put(c, urn)))}
+  end
+
+  def handle_event("select_update", %{"version" => v}, socket) do
+    u = Enum.find(socket.assigns.updates || [], &(to_string(&1.version) == v))
+    {:noreply, assign(socket, selected_update: u, selected: nil)}
+  end
 
   def handle_event("providers", _, socket),
     do: {:noreply, socket |> update(:providers, &(!&1)) |> graph()}
 
   def handle_event("select", %{"urn" => urn}, socket) do
-    {:noreply, assign(socket, selected: Enum.find(socket.assigns.resources, &(&1.urn == urn)))}
+    {:noreply,
+     assign(socket,
+       selected: Enum.find(socket.assigns.resources, &(&1.urn == urn)),
+       selected_update: nil
+     )}
+  end
+
+  defp start_tab(socket),
+    do: if(socket.assigns.prefs.view == "graph", do: "graph", else: "resources")
+
+  @doc false
+  # the view option changed in the settings: follow it unless History is open
+  def prefs_changed(socket, prefs) do
+    if socket.assigns[:tab] in ["graph", "resources"],
+      do: assign(socket, tab: if(prefs.view == "graph", do: "graph", else: "resources")),
+      else: socket
   end
 
   # a source error (for example expired AWS credentials) is more useful than "not found"
@@ -94,89 +131,92 @@ defmodule PulumiViewerWeb.StackLive do
     assign(socket, graph_json: Jason.encode!(g))
   end
 
-  defp filtered(resources, ""), do: resources
-
-  defp filtered(resources, q) do
-    q = String.downcase(q)
-
-    Enum.filter(
-      resources,
-      &String.contains?(String.downcase("#{&1.name} #{&1.type} #{&1.id}"), q)
-    )
-  end
-
-  attr :id, :string, required: true
-  attr :name, :string, required: true
-  attr :code, :string, required: true
-
-  # Rendered in the browser by @pierre/diffs (the diffs.com code viewer). The <pre> is the
-  # no-JS fallback and is replaced on mount.
-  defp code_block(assigns) do
-    ~H"""
-    <div
-      id={@id}
-      phx-hook="CodeBlock"
-      phx-update="ignore"
-      data-name={@name}
-      data-code={@code}
-      class="rounded overflow-hidden text-xs"
-    >
-      <pre class="bg-base-100 p-2 overflow-auto">{@code}</pre>
-    </div>
-    """
-  end
-
-  defp kind_label(:cloudformation), do: "CloudFormation"
-  defp kind_label(_), do: "Pulumi"
-
-  defp pretty(term), do: Jason.encode!(term, pretty: true)
-
   @impl true
   def render(assigns) do
+    assigns =
+      assign(assigns,
+        rows:
+          assigns.resources
+          |> PulumiViewer.ResourceTree.flatten(assigns.collapsed)
+          |> PulumiViewer.ResourceTree.filter(assigns.q)
+      )
+
     ~H"""
-    <Layouts.app flash={@flash}>
-      <div class="breadcrumbs text-sm">
-        <ul>
-          <li><.link navigate={~p"/"}>Stacks</.link></li>
-          <li>{@source.name}</li>
-          <li>{@project || "(no project)"}</li>
-          <li class="font-semibold">{@stack}</li>
-        </ul>
+    <Layouts.app flash={@flash} active={:stacks} prefs={@prefs} full>
+      <div class="flex flex-wrap items-center gap-2 pb-2">
+        <nav class="breadcrumbs py-0 text-sm" aria-label="Breadcrumb">
+          <ul>
+            <li><.link navigate={~p"/"}>Stacks</.link></li>
+            <li>{@source.name}</li>
+            <li>{@project || "(no project)"}</li>
+            <li class="font-semibold">{@stack}</li>
+          </ul>
+        </nav>
+        <.source_badge :if={@source.kind} kind={@source.kind} />
+        <span class="flex-1"></span>
+        <div :if={!@missing} class="pv-seg" role="tablist" aria-label="Page">
+          <button
+            :for={
+              {t, label} <- [
+                {"resources", "Resources (#{length(@resources)})"},
+                {"history", "History"}
+              ]
+            }
+            type="button"
+            role="tab"
+            phx-click="tab"
+            phx-value-tab={if t == "resources", do: "list", else: t}
+            aria-pressed={to_string(@tab == t or (t == "resources" and @tab == "graph"))}
+          >
+            {label}
+          </button>
+        </div>
       </div>
 
-      <div :if={@missing} id="stack-missing" class="alert alert-warning">{@missing}</div>
+      <div
+        :if={@missing}
+        id="stack-missing"
+        class="pv-card flex items-center gap-3 border-l-4 !border-l-warning px-4 py-3"
+        role="alert"
+      >
+        <.icon name="hero-exclamation-triangle" class="size-5 text-warning" /> {@missing}
+      </div>
 
-      <div :if={!@missing} class="space-y-4">
-        <div class="flex items-center gap-2">
-          <div role="tablist" class="tabs tabs-box">
-            <button
-              :for={
-                {t, label} <- [
-                  {"graph", "Graph"},
-                  {"resources", "Resources (#{length(@resources)})"},
-                  {"history", "History"}
-                ]
-              }
-              role="tab"
-              class={["tab", @tab == t && "tab-active"]}
-              phx-click="tab"
-              phx-value-tab={t}
-            >
-              {label}
-            </button>
-          </div>
-          <label :if={@tab == "graph"} class="label text-sm ml-auto">
-            <input
-              type="checkbox"
-              class="toggle toggle-sm"
-              checked={@providers}
-              phx-click="providers"
-            /> Show providers
-          </label>
-        </div>
-
-        <div class="flex gap-4">
-          <div class="flex-1 min-w-0">
+      <.split
+        :if={!@missing}
+        orientation={@prefs.orientation}
+        open={!!(@selected || @selected_update)}
+      >
+        <:master>
+          <div :if={@tab != "history"} class="flex h-full flex-col">
+            <div class="flex flex-wrap items-center gap-2 border-b border-base-300 p-2">
+              <form
+                id="filter"
+                phx-change="filter"
+                phx-submit="filter"
+                class="relative flex-1 min-w-[200px]"
+              >
+                <.icon name="hero-magnifying-glass" class="size-4 absolute left-2.5 top-2 opacity-60" />
+                <input
+                  name="q"
+                  value={@q}
+                  placeholder="Filter by name, type or id"
+                  class="pv-input"
+                  phx-debounce="150"
+                  aria-label="Filter"
+                  autocomplete="off"
+                />
+              </form>
+              <label :if={@tab == "graph"} class="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  class="toggle toggle-sm toggle-primary"
+                  checked={@providers}
+                  phx-click="providers"
+                /> Show providers
+              </label>
+              <.view_toggle tab={@tab} />
+            </div>
             <%!-- ignore keeps React DOM; LiveView still patches data-graph and calls updated() --%>
             <div
               :if={@tab == "graph"}
@@ -184,151 +224,65 @@ defmodule PulumiViewerWeb.StackLive do
               phx-hook="ResourceGraph"
               phx-update="ignore"
               data-graph={@graph_json}
-              class="h-[75vh] rounded-box border border-base-300"
+              class="min-h-[60vh] flex-1"
             >
             </div>
-
-            <div :if={@tab == "resources"} class="space-y-2">
-              <form id="filter" phx-change="filter" phx-submit="filter">
-                <input
-                  name="q"
-                  value={@q}
-                  placeholder="Filter by name, type or id"
-                  class="input input-sm w-full max-w-md"
-                  phx-debounce="150"
-                />
-              </form>
-              <table class="table table-sm">
-                <thead>
-                  <tr>
-                    <th>Name</th><th>Type</th><th>Physical ID</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr
-                    :for={r <- filtered(@resources, @q)}
-                    class="hover cursor-pointer"
-                    phx-click="select"
-                    phx-value-urn={r.urn}
-                  >
-                    <td class="font-medium">{if r.protect, do: "🔒 "}{r.name}</td>
-                    <td class="font-mono text-xs">{r.type}</td>
-                    <td class="font-mono text-xs truncate max-w-xs">{r.id}</td>
-                  </tr>
-                </tbody>
-              </table>
+            <div
+              :if={@tab == "resources"}
+              id="resource-list"
+              role="treegrid"
+              aria-label="Resources"
+              class="flex-1 overflow-auto"
+            >
+              <.resource_rows rows={@rows} selected={@selected && @selected.urn} />
+              <p :if={@rows == []} class="px-4 py-6 text-center opacity-70">
+                No resources match the filter.
+              </p>
             </div>
-
-            <table :if={@tab == "history"} class="table table-sm">
-              <thead>
-                <tr>
-                  <th>#</th><th>When (UTC)</th><th>Kind</th><th>Result</th><th>Changes</th><th>
-                    Message
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr :for={u <- @updates || []}>
-                  <td>{u.version}</td>
-                  <td class="text-xs">
-                    {u.started_at && Calendar.strftime(u.started_at, "%Y-%m-%d %H:%M")}
-                  </td>
-                  <td>{u.kind}</td>
-                  <td>
-                    <span class={[
-                      "badge badge-sm",
-                      u.result == "succeeded" && "badge-success",
-                      u.result == "failed" && "badge-error"
-                    ]}>
-                      {u.result}
-                    </span>
-                  </td>
-                  <td class="text-xs">
-                    {Enum.map_join(u.changes || %{}, " ", fn {k, v} -> "#{k}:#{v}" end)}
-                  </td>
-                  <td class="text-xs">{u.message}</td>
-                </tr>
-              </tbody>
-            </table>
           </div>
 
-          <aside
+          <table :if={@tab == "history"} id="history" class="table table-sm">
+            <thead>
+              <tr>
+                <th>#</th><th>Time (UTC)</th><th>Kind</th><th>Result</th><th>Duration</th><th>
+                  Changes
+                </th><th>Message</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                :for={u <- @updates || []}
+                data-update={u.version}
+                class={[
+                  "cursor-pointer hover:bg-base-200",
+                  @selected_update && @selected_update.version == u.version && "bg-base-200"
+                ]}
+                phx-click="select_update"
+                phx-value-version={u.version}
+              >
+                <td>{u.version}</td>
+                <td class="text-xs whitespace-nowrap">
+                  {u.started_at && Calendar.strftime(u.started_at, "%Y-%m-%d %H:%M")}
+                </td>
+                <td>{u.kind}</td>
+                <td><span class="pv-chip" data-result={u.result}>{u.result}</span></td>
+                <td class="text-xs">{duration(u.duration_s)}</td>
+                <td class="text-xs font-mono">{changes(u.changes)}</td>
+                <td class="text-xs">{u.message}</td>
+              </tr>
+            </tbody>
+          </table>
+        </:master>
+        <:details>
+          <.resource_details
             :if={@selected}
-            class="w-[420px] shrink-0 card bg-base-200 p-4 space-y-3 max-h-[75vh] overflow-auto"
-          >
-            <div class="flex items-start justify-between gap-2">
-              <div>
-                <div class="font-semibold">{@selected.name}</div>
-                <div class="font-mono text-xs opacity-70">{@selected.type}</div>
-              </div>
-              <button class="btn btn-ghost btn-xs" phx-click="close">
-                <.icon name="hero-x-mark" class="size-4" />
-              </button>
-            </div>
-            <dl class="text-xs space-y-1">
-              <div>
-                <dt class="opacity-60">URN</dt>
-                <dd class="font-mono break-all">{@selected.urn}</dd>
-              </div>
-              <div :if={@selected.id}>
-                <dt class="opacity-60">Physical ID</dt>
-                <dd class="font-mono break-all">{@selected.id}</dd>
-              </div>
-              <div :for={l <- Map.get(@links, @selected.id || "", [])} class="also-in">
-                <dt class="opacity-60">Also in</dt>
-                <dd>
-                  <.link
-                    class="link"
-                    navigate={~p"/sources/#{l.source}/stacks/#{l.project || "_"}/#{l.stack}"}
-                  >
-                    {kind_label(l.kind)} stack {l.stack}
-                  </.link>
-                  <span class="opacity-60">({l.source})</span>
-                </dd>
-              </div>
-              <div :if={@selected.parent_urn}>
-                <dt class="opacity-60">Parent</dt>
-                <dd class="font-mono break-all">{@selected.parent_urn}</dd>
-              </div>
-            </dl>
-            <details open>
-              <summary class="text-sm font-semibold cursor-pointer">Outputs</summary>
-              <.code_block
-                id={"out-#{@selected.urn}"}
-                name="outputs.json"
-                code={pretty(@selected.outputs)}
-              />
-            </details>
-            <details>
-              <summary class="text-sm font-semibold cursor-pointer">Inputs</summary>
-              <.code_block
-                id={"in-#{@selected.urn}"}
-                name="inputs.json"
-                code={pretty(@selected.inputs)}
-              />
-            </details>
-            <details>
-              <summary class="text-sm font-semibold cursor-pointer">Raw resource</summary>
-              <.code_block
-                id={"raw-#{@selected.urn}"}
-                name="resource.json"
-                code={
-                  pretty(
-                    Map.from_struct(@selected)
-                    |> Map.drop([
-                      :__meta__,
-                      :__metadata__,
-                      :__lateral_join_source__,
-                      :aggregates,
-                      :calculations
-                    ])
-                  )
-                }
-              />
-            </details>
-          </aside>
-        </div>
-      </div>
+            r={@selected}
+            links={Map.get(@links, @selected.id || "", [])}
+            resources={@resources}
+          />
+          <.update_details :if={@selected_update} u={@selected_update} />
+        </:details>
+      </.split>
     </Layouts.app>
     """
   end
