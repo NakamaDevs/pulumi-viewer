@@ -97,7 +97,7 @@ defmodule PulumiViewer.HostCredentialsTest do
     PulumiViewer.CloudFormation.Cache.clear()
 
     assert {:error, %PulumiViewer.CloudFormation.Error{message: msg}} =
-             PulumiViewer.CloudFormation.Client.list_stacks("us-east-1")
+             PulumiViewer.CloudFormation.Client.list_stacks(%{region: "us-east-1"})
 
     assert msg =~ "The host credential helper did not answer"
   end

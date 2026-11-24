@@ -5,6 +5,7 @@ defmodule PulumiViewer.CloudFormation.Client do
   are retried with exponential backoff.
   """
   require Record
+  alias PulumiViewer.AwsCredentials
   alias PulumiViewer.CloudFormation.{Cache, Error}
 
   Record.defrecordp(
@@ -24,47 +25,46 @@ defmodule PulumiViewer.CloudFormation.Client do
     IMPORT_ROLLBACK_FAILED IMPORT_ROLLBACK_COMPLETE)
   @max_attempts 6
 
-  def list_stacks(region) do
+  def list_stacks(src) do
     filter =
       @live_statuses
       |> Enum.with_index(1)
       |> Map.new(fn {s, i} -> {"StackStatusFilter.member.#{i}", s} end)
 
-    paginate(region, "ListStacks", filter, "StackSummaries", 20)
+    paginate(src, "ListStacks", filter, "StackSummaries", 20)
   end
 
-  def describe_stack(region, name) do
+  def describe_stack(src, name) do
     with {:ok, %{"Stacks" => [stack | _]}} <-
-           call(region, "DescribeStacks", %{"StackName" => name}),
+           call(src, "DescribeStacks", %{"StackName" => name}),
          do: {:ok, stack}
   end
 
-  def list_stack_resources(region, name),
-    do:
-      paginate(region, "ListStackResources", %{"StackName" => name}, "StackResourceSummaries", 20)
+  def list_stack_resources(src, name),
+    do: paginate(src, "ListStackResources", %{"StackName" => name}, "StackResourceSummaries", 20)
 
-  def describe_stack_events(region, name, max_pages \\ 5),
-    do: paginate(region, "DescribeStackEvents", %{"StackName" => name}, "StackEvents", max_pages)
+  def describe_stack_events(src, name, max_pages \\ 5),
+    do: paginate(src, "DescribeStackEvents", %{"StackName" => name}, "StackEvents", max_pages)
 
-  def get_template(region, name) do
+  def get_template(src, name) do
     with {:ok, %{"TemplateBody" => body}} <-
-           call(region, "GetTemplate", %{"StackName" => name, "TemplateStage" => "Original"}),
+           call(src, "GetTemplate", %{"StackName" => name, "TemplateStage" => "Original"}),
          do: {:ok, body}
   end
 
-  defp paginate(region, action, params, key, max_pages, token \\ nil, acc \\ [])
+  defp paginate(src, action, params, key, max_pages, token \\ nil, acc \\ [])
 
-  defp paginate(_region, _action, _params, _key, 0, _token, acc), do: {:ok, acc}
+  defp paginate(_src, _action, _params, _key, 0, _token, acc), do: {:ok, acc}
 
-  defp paginate(region, action, params, key, pages, token, acc) do
+  defp paginate(src, action, params, key, pages, token, acc) do
     params = if token, do: Map.put(params, "NextToken", token), else: params
 
-    with {:ok, result} <- call(region, action, params) do
+    with {:ok, result} <- call(src, action, params) do
       acc = acc ++ list(result[key])
 
       case result["NextToken"] do
         t when t in [nil, ""] -> {:ok, acc}
-        t -> paginate(region, action, params, key, pages - 1, t, acc)
+        t -> paginate(src, action, params, key, pages - 1, t, acc)
       end
     end
   end
@@ -73,49 +73,68 @@ defmodule PulumiViewer.CloudFormation.Client do
   defp list(_), do: []
 
   @doc "One cached, retried call. Returns the `<Action>Result` element as maps and lists."
-  def call(region, action, params) when action in @read_only do
-    Cache.fetch({region, action, params}, fn -> attempt(region, action, params, 1) end)
+  # `src` is a source config: `%{region, name, profile}`. The name keys the cache, because two
+  # sources can read the same region with different credentials.
+  def call(src, action, params) when action in @read_only do
+    key = {src[:name], src.region, src[:profile], action, params}
+    Cache.fetch(key, fn -> attempt(src, action, params, 1) end)
   end
 
-  defp attempt(region, action, params, n) do
-    case env_credentials() do
-      {:error, e} -> {:error, Error.from(e)}
-      creds -> attempt(region, action, params, n, creds)
+  defp attempt(src, action, params, n) do
+    extra = Application.get_env(:pulumi_viewer, :cloudformation_aws_opts, [])
+
+    case credentials(src[:profile]) do
+      {:ok, creds} ->
+        opts = creds ++ extra
+
+        if creds != [] or extra[:access_key_id] != nil or credential_source() != :none,
+          do: send_request(src, action, params, opts, n),
+          else: {:error, Error.from(:no_credentials)}
+
+      {:error, %Error{} = e} ->
+        {:error, e}
+
+      {:error, e} ->
+        {:error, Error.from(e)}
     end
   end
 
-  defp attempt(region, action, params, n, creds) do
-    opts = creds ++ Application.get_env(:pulumi_viewer, :cloudformation_aws_opts, [])
+  # A source with `?profile=` uses only that profile (never another account's keys).
+  defp credentials(profile) when is_binary(profile), do: AwsCredentials.opts(profile)
 
-    if credentials?(opts) do
-      op = %ExAws.Operation.Query{
-        path: "/",
-        service: :cloudformation,
-        action: action,
-        params: Map.merge(params, %{"Action" => action, "Version" => "2010-05-15"})
-      }
+  defp credentials(nil) do
+    case env_credentials() do
+      {:error, _} = e -> e
+      creds -> {:ok, creds}
+    end
+  end
 
-      case request(
-             op,
-             Keyword.merge([region: region, retries: [max_attempts: 1]], Keyword.new(opts))
-           ) do
-        {:ok, %{body: xml}} ->
-          {:ok, xml |> to_term() |> Map.get(action <> "Result", %{})}
+  defp send_request(src, action, params, opts, n) do
+    op = %ExAws.Operation.Query{
+      path: "/",
+      service: :cloudformation,
+      action: action,
+      params: Map.merge(params, %{"Action" => action, "Version" => "2010-05-15"})
+    }
 
-        {:error, {:http_error, status, resp} = e} when n < @max_attempts ->
-          if status == 429 or status >= 500 or
-               Error.code(body(resp)) in ["Throttling", "ThrottlingException"] do
-            Process.sleep(backoff(n))
-            attempt(region, action, params, n + 1)
-          else
-            {:error, Error.from(e)}
-          end
+    case request(
+           op,
+           Keyword.merge([region: src.region, retries: [max_attempts: 1]], Keyword.new(opts))
+         ) do
+      {:ok, %{body: xml}} ->
+        {:ok, xml |> to_term() |> Map.get(action <> "Result", %{})}
 
-        {:error, e} ->
+      {:error, {:http_error, status, resp} = e} when n < @max_attempts ->
+        if status == 429 or status >= 500 or
+             Error.code(body(resp)) in ["Throttling", "ThrottlingException"] do
+          Process.sleep(backoff(n))
+          attempt(src, action, params, n + 1)
+        else
           {:error, Error.from(e)}
-      end
-    else
-      {:error, Error.from(:no_credentials)}
+        end
+
+      {:error, e} ->
+        {:error, Error.from(e)}
     end
   end
 
@@ -183,10 +202,6 @@ defmodule PulumiViewer.CloudFormation.Client do
       _ ->
         []
     end
-  end
-
-  defp credentials?(opts) do
-    opts[:access_key_id] != nil or credential_source() != :none
   end
 
   @doc false

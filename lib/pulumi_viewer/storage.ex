@@ -1,11 +1,13 @@
 defmodule PulumiViewer.Storage do
   @moduledoc """
-  Read-only access to a Pulumi DIY backend. The URL uses the same form as
-  `pulumi login`: `file://<dir>` or `s3://<bucket>[/<prefix>]`. For an AWS
+  The sources the viewer reads. A source is a Pulumi DIY backend, in the same form as
+  `pulumi login` (`file://<dir>` or `s3://<bucket>[/<prefix>]`), or live CloudFormation stacks
+  (`cloudformation://<region>[?prefix=<p>]`, see `PulumiViewer.CloudFormation`). For an AWS
   emulator (Floci, LocalStack, AWS Emulator) set `AWS_ENDPOINT_URL`.
 
-  `cloudformation://<region>[?prefix=<p>]` is not a Pulumi backend: it reads live
-  CloudFormation stacks instead (see `PulumiViewer.CloudFormation`).
+  Several sources load at the same time: `PULUMI_BACKEND_URLS="dev=cloudformation://us-east-1,
+  prod=s3://state-prod"`. Each AWS source can name its own profile with `?profile=<name>`.
+  A single `PULUMI_BACKEND_URL` is one source named `default`.
   """
 
   @callback list(config :: term, prefix :: String.t()) :: [String.t()]
@@ -15,8 +17,15 @@ defmodule PulumiViewer.Storage do
     do: {PulumiViewer.Storage.Local, Path.expand(path) |> relative(path)}
 
   def parse_url("s3://" <> rest) do
-    [bucket | prefix] = rest |> String.split("?") |> hd() |> String.split("/", parts: 2)
-    {PulumiViewer.Storage.S3, %{bucket: bucket, prefix: prefix |> List.first() |> blank()}}
+    {path, query} = split_query(rest)
+    [bucket | prefix] = String.split(path, "/", parts: 2)
+
+    {PulumiViewer.Storage.S3,
+     %{
+       bucket: bucket,
+       prefix: prefix |> List.first() |> blank(),
+       profile: blank(query["profile"])
+     }}
   end
 
   def parse_url("cloudformation://" <> rest),
@@ -32,11 +41,27 @@ defmodule PulumiViewer.Storage do
     end
   end
 
-  @doc "The backend of one source (see `PulumiViewer.Sources`)."
-  def for_source(%{url: url}), do: parse_url(url)
+  @doc """
+  The backend of one source (see `PulumiViewer.Sources`). The source name goes into an AWS
+  config: it keys the CloudFormation cache, because two sources can read the same region
+  with different profiles.
+  """
+  def for_source(%{name: name, url: url}) do
+    case parse_url(url) do
+      {mod, cfg} when is_map(cfg) -> {mod, Map.put(cfg, :name, name)}
+      other -> other
+    end
+  end
 
   def list({mod, cfg}, prefix), do: mod.list(cfg, prefix)
   def read({mod, cfg}, key), do: mod.read(cfg, key)
+
+  defp split_query(rest) do
+    case String.split(rest, "?", parts: 2) do
+      [path, q] -> {path, URI.decode_query(q)}
+      [path] -> {path, %{}}
+    end
+  end
 
   # keep relative paths relative so tests and `file://.` behave like the Pulumi CLI
   defp relative(_expanded, "~" <> _ = path), do: Path.expand(path)

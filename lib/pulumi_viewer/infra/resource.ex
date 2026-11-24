@@ -4,6 +4,7 @@ defmodule PulumiViewer.Infra.Resource do
   actions do
     read :for_stack do
       argument :project, :string
+      argument :source, :string
       argument :stack, :string, allow_nil?: false
       argument :source, :string
       manual PulumiViewer.Infra.Resource.Read

@@ -36,7 +36,8 @@ defmodule PulumiViewer.Sources do
   def parse(text) do
     entries =
       text
-      |> String.split(["\n", ";"], trim: true)
+      # a comma splits only where a new `name=scheme://` entry starts, so `?prefix=a,b` stays
+      |> String.split(~r/[\n;]|,(?=\s*[^,=\s]+=[a-z][a-z0-9+.-]*:\/\/)/i, trim: true)
       |> Enum.map(&String.trim/1)
       |> Enum.reject(&(&1 == ""))
       |> Enum.map(fn e ->

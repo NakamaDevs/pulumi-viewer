@@ -15,8 +15,9 @@ cond do
     :ok
 end
 
-# Several sources at once: one `name=url` per line or `;`-separated (see PulumiViewer.Sources).
-case System.get_env("PULUMI_VIEWER_SOURCES") do
+# Several sources at once: `name=url` entries separated by a newline, `;` or `,` (see
+# PulumiViewer.Sources). PULUMI_BACKEND_URLS is the older name of the same setting.
+case System.get_env("PULUMI_VIEWER_SOURCES") || System.get_env("PULUMI_BACKEND_URLS") do
   v when v in [nil, ""] -> :ok
   v -> config :pulumi_viewer, sources: v
 end

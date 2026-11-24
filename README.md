@@ -74,10 +74,19 @@ The backend URL uses the same form as `pulumi login`. The viewer only lists and 
 PULUMI_VIEWER_SOURCES='pulumi=file:///state/pulumi;cloudformation=cloudformation://us-east-1'
 ```
 
-One `name=url` entry per line or `;`-separated; each URL is `file://`, `s3://` or
-`cloudformation://`. `PULUMI_BACKEND_URL` alone still works (one source named `default`). Stack
-pages are at `/sources/<source>/stacks/<project>/<stack>`; `/stacks/<project>/<stack>` reads the
-first source.
+Separate the `name=url` entries with a newline, `;` or `,`. A comma inside a query value
+(`?prefix=a,b`) stays in its URL. Each URL is `file://`, `s3://` or `cloudformation://`.
+`PULUMI_BACKEND_URLS` is the older name of the same setting. `PULUMI_BACKEND_URL` alone still
+works (one source named `default`). Stack pages are at `/sources/<source>/stacks/<project>/<stack>`;
+`/stacks/<project>/<stack>` reads the first source. A source that fails (for example, expired
+credentials) shows its own error, and the others still load.
+
+Each AWS source can use its own profile with `?profile=<name>`, for example
+`prod=cloudformation://us-east-1?profile=prod-readonly`. When the `aws` CLI is installed, the
+viewer gets the credentials with `aws configure export-credentials`, so every profile type works
+(keys, SSO, `aws login`, assumed roles). Without the CLI (for example in the Docker image), ExAws
+reads `~/.aws` itself (keys and SSO only). A source with a profile never falls back to other
+credentials. A source without a profile uses the credential chain below.
 
 Environment of a stack: for Pulumi the stack name (`dev`, `staging`, `prod`, also
 `<env>-<anything>` and `<anything>-<env>`); for CloudFormation the first name token that is

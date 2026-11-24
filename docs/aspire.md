@@ -16,6 +16,7 @@ or Node. To run your own changes, build the `Dockerfile` at the repository root 
 
 | Variable | Default | Use |
 | --- | --- | --- |
+| `PULUMI_BACKEND_URLS` | none | several sources at the same time: `name=url,name=url`; each AWS URL can add `?profile=<name>` (see the README) |
 | `PULUMI_BACKEND_URL` | bundled demo state | `s3://<bucket>[/prefix]` or `file://<dir>`, same form as `pulumi login`; or `cloudformation://<region>[?prefix=<p>]` for live CloudFormation stacks |
 | `PULUMI_VIEWER_SOURCES` | none | several sources: `name=url` per line or `;`-separated, for example `pulumi=file:///state/pulumi;cloudformation=cloudformation://us-east-1`; overrides `PULUMI_BACKEND_URL` |
 | `AWS_REGION` | `us-east-1` | region of the state bucket |

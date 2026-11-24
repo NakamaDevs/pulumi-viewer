@@ -30,4 +30,30 @@ defmodule PulumiViewer.SourcesTest do
     assert [%{name: "default", url: "file://x", kind: :pulumi}] = Sources.resolve(nil, "file://x")
     assert [%{name: "p"}] = Sources.resolve("p=file://y", "file://x")
   end
+
+  describe "comma lists and profiles (the PULUMI_BACKEND_URLS form)" do
+    test "a comma starts a new entry; a comma inside a query value stays" do
+      assert [
+               %{name: "dev", url: "cloudformation://us-east-1?prefix=a,b&profile=p"},
+               %{name: "local", url: "file://test/fixtures/state"}
+             ] =
+               PulumiViewer.Sources.parse(
+                 "dev=cloudformation://us-east-1?prefix=a,b&profile=p, local=file://test/fixtures/state"
+               )
+    end
+
+    test "each AWS source keeps its own profile and name" do
+      assert {PulumiViewer.CloudFormation, %{profile: "bundle-dev", name: "dev"}} =
+               PulumiViewer.Storage.for_source(%{
+                 name: "dev",
+                 url: "cloudformation://us-east-1?profile=bundle-dev"
+               })
+
+      assert {PulumiViewer.Storage.S3, %{bucket: "state", profile: "bundle-prod", name: "prod"}} =
+               PulumiViewer.Storage.for_source(%{
+                 name: "prod",
+                 url: "s3://state?profile=bundle-prod"
+               })
+    end
+  end
 end

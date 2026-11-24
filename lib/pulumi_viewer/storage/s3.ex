@@ -5,13 +5,13 @@ defmodule PulumiViewer.Storage.S3 do
   def list(%{bucket: bucket} = cfg, prefix) do
     bucket
     |> ExAws.S3.list_objects_v2(prefix: full(cfg, prefix))
-    |> ExAws.stream!(aws_opts())
+    |> ExAws.stream!(aws_opts(cfg))
     |> Enum.map(&strip(cfg, &1.key))
   end
 
   @impl true
   def read(%{bucket: bucket} = cfg, key) do
-    case ExAws.S3.get_object(bucket, full(cfg, key)) |> ExAws.request(aws_opts()) do
+    case ExAws.S3.get_object(bucket, full(cfg, key)) |> ExAws.request(aws_opts(cfg)) do
       {:ok, %{body: body}} -> {:ok, body}
       {:error, e} -> {:error, e}
     end
@@ -24,7 +24,17 @@ defmodule PulumiViewer.Storage.S3 do
   defp strip(%{prefix: p}, key), do: String.replace_prefix(key, p <> "/", "")
 
   # Honour AWS_ENDPOINT_URL so the same code reads Floci, LocalStack or the AWS Emulator.
-  defp aws_opts, do: host_credentials() ++ endpoint_opts()
+  # A source with `?profile=` uses only that profile: never fall back to other credentials,
+  # which would read this source with another account's keys. Without a profile, the host
+  # credential helper when configured, else the default ExAws chain.
+  defp aws_opts(%{profile: p}) when is_binary(p) do
+    case PulumiViewer.AwsCredentials.opts(p) do
+      {:ok, creds} -> creds ++ endpoint_opts()
+      {:error, e} -> raise e
+    end
+  end
+
+  defp aws_opts(_cfg), do: host_credentials() ++ endpoint_opts()
 
   defp host_credentials do
     if PulumiViewer.HostCredentials.configured?() do
