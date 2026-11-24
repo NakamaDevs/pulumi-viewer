@@ -71,6 +71,19 @@ defmodule PulumiViewerWeb.SourcesLiveTest do
     assert html =~ "duplicate source name pulumi"
   end
 
+  test "a corrupt checkpoint in one source does not hide the other sources", %{conn: conn} do
+    Application.put_env(
+      :pulumi_viewer,
+      :backend_urls,
+      "pulumi=file://test/fixtures/state,corrupt=file://test/fixtures/corrupt_state"
+    )
+
+    {:ok, view, html} = live(conn, ~p"/")
+    assert has_element?(view, ~s|a[href="/stacks/demo/dev?source=pulumi"]|)
+    # the corrupt stack is still listed, with no resources
+    assert html =~ "proj"
+  end
+
   test "a stack page reads from the source in the link", %{conn: conn} do
     {:ok, _view, html} = live(conn, ~p"/stacks/web/web-prod?source=cfn")
     assert html =~ "AWS::Lambda::Function"

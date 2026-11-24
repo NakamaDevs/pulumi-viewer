@@ -65,6 +65,19 @@ defmodule PulumiViewer.AwsCredentialsTest do
     assert e.message =~ "aws login --profile prod"
   end
 
+  test "a profile that hangs times out and its aws process is stopped", %{dir: dir} do
+    pidfile = Path.join(dir, "pid")
+    fake_aws(dir, "echo $$ > #{pidfile}; exec sleep 30")
+    Application.put_env(:pulumi_viewer, :aws_cli_timeout_ms, 500)
+    on_exit(fn -> Application.delete_env(:pulumi_viewer, :aws_cli_timeout_ms) end)
+
+    assert {:error, e} = AwsCredentials.opts("mfa")
+    assert e.message =~ "did not answer"
+    pid = pidfile |> File.read!() |> String.trim()
+    Process.sleep(100)
+    assert {_, 1} = System.cmd("kill", ["-0", pid], stderr_to_stdout: true)
+  end
+
   test "no profile uses the keys in the environment" do
     assert {:ok, opts} = AwsCredentials.opts(nil)
     assert is_list(opts)

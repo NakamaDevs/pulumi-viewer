@@ -48,6 +48,8 @@ defmodule PulumiViewerWeb.StacksLive do
   rescue
     # a source that raises (for example S3 without access) must not take down the page
     e -> failed(src, PulumiViewer.error_message(e))
+  catch
+    :exit, _ -> failed(src, "#{src.name} stopped while it loaded its stacks.")
   end
 
   defp failed(src, message), do: %{name: src.name, url: src.url, error: message, stacks: %{}}
