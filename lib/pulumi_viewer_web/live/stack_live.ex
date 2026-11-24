@@ -137,7 +137,9 @@ defmodule PulumiViewerWeb.StackLive do
       assign(assigns,
         rows:
           assigns.resources
-          |> PulumiViewer.ResourceTree.flatten(assigns.collapsed)
+          |> PulumiViewer.ResourceTree.flatten(
+            if(assigns.q == "", do: assigns.collapsed, else: MapSet.new())
+          )
           |> PulumiViewer.ResourceTree.filter(assigns.q)
       )
 
@@ -191,6 +193,7 @@ defmodule PulumiViewerWeb.StackLive do
           <div :if={@tab != "history"} class="flex h-full flex-col">
             <div class="flex flex-wrap items-center gap-2 border-b border-base-300 p-2">
               <form
+                :if={@tab == "resources"}
                 id="filter"
                 phx-change="filter"
                 phx-submit="filter"
@@ -207,6 +210,7 @@ defmodule PulumiViewerWeb.StackLive do
                   autocomplete="off"
                 />
               </form>
+              <span :if={@tab == "graph"} class="flex-1"></span>
               <label :if={@tab == "graph"} class="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"

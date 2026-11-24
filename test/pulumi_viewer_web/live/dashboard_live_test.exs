@@ -53,6 +53,19 @@ defmodule PulumiViewerWeb.DashboardLiveTest do
     refute has_element?(view, "#resource-list [data-urn='#{@bucket_urn}']")
   end
 
+  test "a search finds resources under a collapsed parent", %{conn: conn} do
+    {:ok, view, _} = live(conn, ~p"/stacks/demo/dev")
+    view |> element("#resource-list [data-urn='#{@stack_urn}'] [data-toggle]") |> render_click()
+    view |> form("#filter", %{q: "policy"}) |> render_change()
+    assert has_element?(view, "#resource-list", "assets-policy")
+  end
+
+  test "the filter box is only in the table view", %{conn: conn} do
+    {:ok, view, _} = live(conn, ~p"/stacks/demo/dev")
+    view |> element(~s|button[phx-value-tab="graph"]|) |> render_click()
+    refute has_element?(view, "#filter")
+  end
+
   test "details panel sits beside or below, by the orientation option", %{conn: conn} do
     {:ok, view, _} = live(conn, ~p"/stacks/demo/dev")
     render_hook(view, "select", %{"urn" => @bucket_urn})

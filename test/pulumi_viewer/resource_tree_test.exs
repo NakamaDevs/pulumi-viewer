@@ -29,6 +29,20 @@ defmodule PulumiViewer.ResourceTreeTest do
     assert Enum.map(rows, & &1.resource.urn) == ["a", "c"]
   end
 
+  test "matches under two sibling branches keep both ancestor paths" do
+    rows =
+      ResourceTree.flatten([
+        r("a"),
+        r("b", "a"),
+        r("c", "b", "match"),
+        r("d", "a"),
+        r("e", "d", "match")
+      ])
+      |> ResourceTree.filter("match")
+
+    assert Enum.map(rows, & &1.resource.urn) == ~w(a b c d e)
+  end
+
   test "an empty filter keeps all rows" do
     rows = ResourceTree.flatten([r("a"), r("b")])
     assert ResourceTree.filter(rows, "") == rows

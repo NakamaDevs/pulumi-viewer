@@ -49,21 +49,17 @@ defmodule PulumiViewer.ResourceTree do
       String.contains?(String.downcase("#{r.name} #{r.type} #{r.id}"), q)
     end
 
-    # walk backwards: a row is kept when it matches or a kept row below it is deeper
+    # walk backwards: keep a row that matches, or one that is shallower than the last kept
+    # row (its ancestor). Each kept row sets the depth that the next ancestor must be under.
     {kept, _} =
       rows
       |> Enum.reverse()
       |> Enum.reduce({[], nil}, fn row, {acc, need} ->
-        cond do
-          hit?.(row) -> {[row | acc], min_depth(need, row.depth)}
-          need != nil and row.depth < need -> {[row | acc], row.depth}
-          true -> {acc, need}
-        end
+        if hit?.(row) or (need != nil and row.depth < need),
+          do: {[row | acc], row.depth},
+          else: {acc, need}
       end)
 
     kept
   end
-
-  defp min_depth(nil, d), do: d
-  defp min_depth(n, d), do: min(n, d)
 end

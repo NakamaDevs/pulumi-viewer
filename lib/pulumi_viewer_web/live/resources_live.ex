@@ -103,7 +103,7 @@ defmodule PulumiViewerWeb.ResourcesLive do
 
     resources
     |> Enum.filter(&(package == "all" or &1.package == package))
-    |> ResourceTree.flatten(stack_collapsed)
+    |> ResourceTree.flatten(if(q == "", do: stack_collapsed, else: MapSet.new()))
     |> ResourceTree.filter(q)
   end
 
