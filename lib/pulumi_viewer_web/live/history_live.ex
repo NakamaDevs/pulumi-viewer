@@ -68,8 +68,9 @@ defmodule PulumiViewerWeb.HistoryLive do
          result: params["result"] || socket.assigns.result
        )}
 
+  # keep the id, not the entry: after a refresh the panel shows the reloaded update
   def handle_event("select_update", %{"id" => id}, socket),
-    do: {:noreply, assign(socket, selected: Enum.find(socket.assigns.updates, &(&1.id == id)))}
+    do: {:noreply, assign(socket, selected: id)}
 
   def handle_event("close", _, socket), do: {:noreply, assign(socket, selected: nil)}
 
@@ -88,11 +89,15 @@ defmodule PulumiViewerWeb.HistoryLive do
 
   @impl true
   def render(assigns) do
-    assigns = assign(assigns, shown: visible(assigns.updates, assigns.q, assigns.result))
+    assigns =
+      assign(assigns,
+        shown: visible(assigns.updates, assigns.q, assigns.result),
+        sel: assigns.selected && Enum.find(assigns.updates, &(&1.id == assigns.selected))
+      )
 
     ~H"""
     <Layouts.app flash={@flash} active={:history} prefs={@prefs} full>
-      <.split orientation={@prefs.orientation} open={@selected != nil}>
+      <.split orientation={@prefs.orientation} open={@sel != nil}>
         <:master>
           <div class="flex h-full flex-col">
             <form
@@ -170,7 +175,7 @@ defmodule PulumiViewerWeb.HistoryLive do
                     data-result={e.u.result}
                     class={[
                       "cursor-pointer hover:bg-base-200",
-                      @selected && @selected.id == e.id && "bg-base-200"
+                      @selected == e.id && "bg-base-200"
                     ]}
                     phx-click="select_update"
                     phx-value-id={e.id}
@@ -198,7 +203,7 @@ defmodule PulumiViewerWeb.HistoryLive do
           </div>
         </:master>
         <:details>
-          <.update_details :if={@selected} u={@selected.u} stack={@selected.stack} />
+          <.update_details :if={@sel} u={@sel.u} stack={@sel.stack} />
         </:details>
       </.split>
     </Layouts.app>
