@@ -33,6 +33,12 @@ defmodule PulumiViewerWeb.DashboardLiveTest do
     refute has_element?(view, "#group-dev [data-row='stack']")
   end
 
+  test "pressing Enter in the stacks filter keeps the page and applies the filter", %{conn: conn} do
+    {:ok, view, _} = live(conn, ~p"/")
+    view |> form("#filters", %{q: "nomatch"}) |> render_submit()
+    refute has_element?(view, "[data-row='stack']")
+  end
+
   test "stack page opens on the table; the toggle switches to the graph", %{conn: conn} do
     {:ok, view, _} = live(conn, ~p"/stacks/demo/dev")
     assert has_element?(view, "#resource-list [data-urn='#{@bucket_urn}']")

@@ -122,6 +122,7 @@ defmodule PulumiViewerWeb.StacksLive do
         for={@filter_form}
         id="filters"
         phx-change="filter"
+        phx-submit="filter"
         class="flex flex-wrap items-center gap-2 pb-2"
       >
         <div class="relative flex-1 min-w-[220px]">
