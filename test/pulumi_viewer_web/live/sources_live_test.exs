@@ -45,7 +45,7 @@ defmodule PulumiViewerWeb.SourcesLiveTest do
     Application.put_env(
       :pulumi_viewer,
       :backend_urls,
-      "pulumi=file://test/fixtures/state,broken=s3://nobucket,typo=ftp://x"
+      "pulumi=file://test/fixtures/state,broken=s3://nobucket,typo=ftp://x,pulumi=file://x"
     )
 
     prev =
