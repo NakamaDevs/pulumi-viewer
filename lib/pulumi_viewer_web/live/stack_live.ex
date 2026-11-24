@@ -144,7 +144,7 @@ defmodule PulumiViewerWeb.StackLive do
         </ul>
       </div>
 
-      <div :if={@missing} class="alert alert-warning">{@missing}</div>
+      <div :if={@missing} id="stack-missing" class="alert alert-warning">{@missing}</div>
 
       <div :if={!@missing} class="space-y-4">
         <div class="flex items-center gap-2">

@@ -4,7 +4,7 @@ defmodule PulumiViewerWeb.StacksLive do
 
   @impl true
   def mount(_params, _session, socket) do
-    {:ok, socket |> assign(page_title: "Stacks", env: "all", source: "all") |> load()}
+    {:ok, socket |> assign(page_title: "Stacks") |> assign_filter("all", "all") |> load()}
   end
 
   @impl true
@@ -13,10 +13,19 @@ defmodule PulumiViewerWeb.StacksLive do
   def handle_event("filter", params, socket),
     do:
       {:noreply,
-       assign(socket,
-         env: params["env"] || socket.assigns.env,
-         source: params["source"] || socket.assigns.source
+       assign_filter(
+         socket,
+         params["env"] || socket.assigns.env,
+         params["source"] || socket.assigns.source
        )}
+
+  defp assign_filter(socket, env, source) do
+    assign(socket,
+      env: env,
+      source: source,
+      filter_form: to_form(%{"env" => env, "source" => source})
+    )
+  end
 
   # Each source loads on its own, so one failing source does not hide the others.
   defp load(socket) do
@@ -99,6 +108,10 @@ defmodule PulumiViewerWeb.StacksLive do
 
   defp env_tag({_, v}), do: v
 
+  defp select_class,
+    do:
+      "rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:bg-zinc-900 dark:border-zinc-700"
+
   defp stack_path(s), do: ~p"/sources/#{s.source}/stacks/#{s.project || "_"}/#{s.name}"
 
   @impl true
@@ -113,21 +126,41 @@ defmodule PulumiViewerWeb.StacksLive do
     <Layouts.app flash={@flash}>
       <div class="flex flex-wrap items-center justify-between gap-2">
         <h1 class="text-xl font-semibold">Stacks</h1>
-        <form id="filters" phx-change="filter" class="flex gap-2">
-          <select name="env" class="select select-sm" aria-label="Environment">
-            <option value="all" selected={@env == "all"}>All environments</option>
-            <option :for={{label, v} <- @env_options} value={v} selected={@env == v}>{label}</option>
+        <.form for={@filter_form} id="filters" phx-change="filter" class="flex gap-2">
+          <select
+            id={@filter_form[:env].id}
+            name={@filter_form[:env].name}
+            class={select_class()}
+            aria-label="Environment"
+          >
+            <option value="all" selected={@filter_form[:env].value == "all"}>All environments</option>
+            <option
+              :for={{label, v} <- @env_options}
+              value={v}
+              selected={@filter_form[:env].value == v}
+            >
+              {label}
+            </option>
           </select>
-          <select name="source" class="select select-sm" aria-label="Source">
-            <option value="all" selected={@source == "all"}>All sources</option>
-            <option :for={{s, _} <- @results} value={s.name} selected={@source == s.name}>
+          <select
+            id={@filter_form[:source].id}
+            name={@filter_form[:source].name}
+            class={select_class()}
+            aria-label="Source"
+          >
+            <option value="all" selected={@filter_form[:source].value == "all"}>All sources</option>
+            <option
+              :for={{s, _} <- @results}
+              value={s.name}
+              selected={@filter_form[:source].value == s.name}
+            >
               {s.name}
             </option>
           </select>
           <button type="button" class="btn btn-sm" phx-click="refresh">
             <.icon name="hero-arrow-path" class="size-4" /> Refresh
           </button>
-        </form>
+        </.form>
       </div>
 
       <div
@@ -164,10 +197,13 @@ defmodule PulumiViewerWeb.StacksLive do
                 </div>
                 <div class="text-sm opacity-70">
                   {s.resource_count} resources
-                  <span class={[
-                    "badge badge-xs ml-1",
-                    if(s.kind == :cloudformation, do: "badge-warning", else: "badge-info")
-                  ]}>
+                  <span
+                    data-kind={s.kind}
+                    class={[
+                      "badge badge-xs ml-1",
+                      if(s.kind == :cloudformation, do: "badge-warning", else: "badge-info")
+                    ]}
+                  >
                     {kind_label(s.kind)}
                   </span>
                 </div>

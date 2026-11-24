@@ -42,14 +42,13 @@ defmodule PulumiViewer.HostCredentials do
 
   defp refresh(now) do
     with {:ok, token} <- File.read(System.get_env("AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE")),
-         {:ok, %{status_code: 200, body: body}} <-
-           ExAws.Request.Hackney.request(
-             :get,
-             System.get_env("AWS_CONTAINER_CREDENTIALS_FULL_URI"),
-             "",
-             [{"Authorization", String.trim(token)}],
-             recv_timeout: 5_000,
-             connect_timeout: 2_000
+         {:ok, %Req.Response{status: 200, body: body}} <-
+           Req.get(System.get_env("AWS_CONTAINER_CREDENTIALS_FULL_URI"),
+             headers: [{"authorization", String.trim(token)}],
+             receive_timeout: 5_000,
+             connect_options: [timeout: 2_000],
+             retry: false,
+             decode_body: false
            ),
          {:ok, %{"AccessKeyId" => id, "SecretAccessKey" => secret} = c} <- Jason.decode(body) do
       keys = [access_key_id: id, secret_access_key: secret, security_token: c["Token"]]

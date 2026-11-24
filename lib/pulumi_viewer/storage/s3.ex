@@ -25,8 +25,9 @@ defmodule PulumiViewer.Storage.S3 do
 
   # Honour AWS_ENDPOINT_URL so the same code reads Floci, LocalStack or the AWS Emulator.
   # A source with `?profile=` uses only that profile: never fall back to other credentials,
-  # which would read this source with another account's keys. Without a profile, the host
-  # credential helper when configured, else the default ExAws chain.
+  # which would read this source with another account's keys. Without a profile, the same
+  # precedence as CloudFormation: keys in the environment win, then the host credential helper
+  # when configured, else the default ExAws chain.
   defp aws_opts(%{profile: p}) when is_binary(p) do
     case PulumiViewer.AwsCredentials.opts(p) do
       {:ok, creds} -> creds ++ endpoint_opts()
@@ -37,7 +38,7 @@ defmodule PulumiViewer.Storage.S3 do
   defp aws_opts(_cfg), do: host_credentials() ++ endpoint_opts()
 
   defp host_credentials do
-    if PulumiViewer.HostCredentials.configured?() do
+    if PulumiViewer.CloudFormation.Client.credential_source() == :container_full_uri do
       case PulumiViewer.HostCredentials.fetch() do
         {:ok, keys} ->
           keys

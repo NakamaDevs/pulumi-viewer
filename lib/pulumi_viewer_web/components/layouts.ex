@@ -42,6 +42,7 @@ defmodule PulumiViewerWeb.Layouts do
           :for={s <- PulumiViewer.sources_label()}
           class="badge badge-ghost font-mono text-xs"
           title="Source"
+          data-source-label
         >
           {s}
         </span>
