@@ -48,7 +48,7 @@ defmodule PulumiViewer.Infra.Stack.Read do
             {:ok, cp} -> {:ok, stack(src, s, cp)}
             # credentials or access: the whole source fails, with a clear message
             {:error, %PulumiViewer.CloudFormation.Error{source?: true} = e} -> {:error, e}
-            # one stack failed (deleted, denied, unreadable): show it with the message
+            # one stack failed (deleted, denied for this stack, unreadable): show its message
             {:error, e} -> {:ok, failed(src, s, PulumiViewer.error_message(e))}
             _ -> {:ok, failed(src, s, nil)}
           end

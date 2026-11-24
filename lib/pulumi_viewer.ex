@@ -4,12 +4,16 @@ defmodule PulumiViewer do
   @doc "A short message for an error, without the Ash wrapper and stack trace of a source error."
   def error_message(%PulumiViewer.CloudFormation.Error{message: m}), do: m
 
-  def error_message(e) do
+  def error_message(:not_found), do: "Stack not found."
+
+  def error_message(e) when is_exception(e) do
     case find_source_error(e) do
       nil -> Exception.message(e)
       inner -> inner.message
     end
   end
+
+  def error_message(e), do: "Read failed: " <> inspect(e, limit: 5, printable_limit: 200)
 
   defp find_source_error(%PulumiViewer.CloudFormation.Error{} = e), do: e
 

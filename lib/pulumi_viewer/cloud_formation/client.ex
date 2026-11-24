@@ -123,9 +123,9 @@ defmodule PulumiViewer.CloudFormation.Client do
   defp request(op, opts) do
     ExAws.request(op, opts)
   rescue
-    e -> {:error, Exception.message(e)}
+    e -> {:error, {:raised, Exception.message(e)}}
   catch
-    :exit, reason -> {:error, {:exit, reason}}
+    :exit, reason -> {:error, {:raised, inspect(reason)}}
   end
 
   defp body(%{body: b}), do: b

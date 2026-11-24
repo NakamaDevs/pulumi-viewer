@@ -6,6 +6,17 @@ defmodule PulumiViewer.CloudFormation.Error do
   def from({:http_error, status, body}) when is_binary(body), do: from_body(status, body)
   def from(:no_credentials), do: credentials("AWS credentials are missing.")
   def from(:credential_helper), do: credentials("AWS credentials are missing.")
+
+  # ExAws raised or exited. With a profile this is almost always an expired session (ExAws's
+  # AuthCache returns nil and ExAws then raises), so keep the login hint.
+  def from({:raised, msg}) do
+    case PulumiViewer.CloudFormation.Client.credential_source() do
+      {:profile, _} -> credentials("AWS credentials could not be read (#{msg}).")
+      :container_full_uri -> credentials("AWS credentials could not be read (#{msg}).")
+      _ -> %__MODULE__{message: "CloudFormation read failed: #{msg}"}
+    end
+  end
+
   def from(%__MODULE__{} = e), do: e
   def from(other), do: %__MODULE__{message: "CloudFormation read failed: #{inspect(other)}"}
 
@@ -29,7 +40,6 @@ defmodule PulumiViewer.CloudFormation.Error do
       "AccessDenied" <> _ ->
         %__MODULE__{
           code: code,
-          source?: true,
           message:
             "Access denied: #{text}. The viewer needs cloudformation:ListStacks, DescribeStacks, ListStackResources, DescribeStackEvents and GetTemplate."
         }

@@ -53,6 +53,12 @@ defmodule PulumiViewerWeb.SourceIsolationLiveTest do
     assert html =~ "Stack does not exist"
   end
 
+  test "the history tab of a source that raises shows no crash", %{conn: conn} do
+    Application.put_env(:pulumi_viewer, :sources, "broken=readraise://x")
+    {:ok, view, _} = live(conn, ~p"/sources/broken/stacks/bundle/dev")
+    assert render(view) =~ "Cannot read the state"
+  end
+
   test "a bad PULUMI_VIEWER_SOURCES is rejected by the startup check" do
     Application.put_env(:pulumi_viewer, :sources, "nope")
     assert_raise ArgumentError, fn -> PulumiViewer.Sources.validate!() end

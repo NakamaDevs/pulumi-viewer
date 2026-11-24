@@ -48,8 +48,14 @@ defmodule PulumiViewer.Infra.State do
     case source(src) do
       {:ok, s} ->
         case Storage.for_source(s) do
-          {CloudFormation, cfg} -> CloudFormation.updates(cfg, stack, limit)
-          backend -> pulumi_updates(backend, project, stack, limit)
+          {CloudFormation, cfg} ->
+            CloudFormation.updates(cfg, stack, limit)
+
+          backend ->
+            case safe(fn -> {:ok, pulumi_updates(backend, project, stack, limit)} end) do
+              {:ok, updates} -> updates
+              _ -> []
+            end
         end
 
       _ ->
