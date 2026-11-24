@@ -26,6 +26,10 @@ defmodule PulumiViewerWeb.StacksLiveTest do
 
     assert html =~ "arn:aws:s3:::assets-dev"
     assert html =~ "[secret]"
+    # code panels render with the diffs.com viewer, from server-provided JSON
+    assert has_element?(view, ~s|[phx-hook="CodeBlock"][data-name="outputs.json"]|)
+    assert has_element?(view, ~s|[phx-hook="CodeBlock"][data-name="inputs.json"]|)
+    assert has_element?(view, ~s|[phx-hook="CodeBlock"][data-name="resource.json"]|)
   end
 
   test "filters resources by text", %{conn: conn} do

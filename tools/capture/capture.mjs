@@ -30,7 +30,7 @@ await pause(1500); await shot("graph")
 
 // Resource details from the graph
 await page.locator(".react-flow__node", {hasText: "postgres"}).first().click()
-await expect(page.getByText("[secret]")).toBeVisible()
+await expect(page.getByText("[secret]").first()).toBeVisible()
 await pause(1500); await shot("details")
 
 // Providers toggle

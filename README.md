@@ -8,7 +8,7 @@ What you can do with it:
 
 - **List every stack** in a backend, grouped by project, with resource count, last update and Pulumi version.
 - **See a stack as a graph**: resources laid out by dependency, with parent and provider links (xyflow + ELK).
-- **Open any resource**: URN, physical ID, parent, inputs and outputs. Secrets stay encrypted (`[secret]`).
+- **Open any resource**: URN, physical ID, parent, inputs, outputs and raw JSON, highlighted with the [diffs.com](https://diffs.com) code viewer. Secrets stay encrypted (`[secret]`).
 - **Search resources** by name, type or physical ID.
 - **Read the update history**: each `pulumi up` with its result, change counts and message.
 - **Use real AWS or an emulator** (Floci, LocalStack, AWS Emulator) with the same code.
@@ -39,6 +39,7 @@ More Docker samples (real S3, local folder, emulator) and Aspire AppHost samples
 
 Built with Elixir, Phoenix LiveView, [Ash](https://ash-hq.org) (state is modelled as Ash resources),
 Tailwind/daisyUI, [xyflow](https://xyflow.com) + [ELK](https://eclipse.dev/elk/) for the graph,
+[@pierre/diffs](https://diffs.com) for code and (later) preview diffs,
 and optional [Tidewave](https://tidewave.ai) in dev.
 
 ## Run from source
@@ -81,6 +82,7 @@ cd tools/capture && npm ci && BASE_URL=http://localhost:4078 node capture.mjs
 - `lib/pulumi_viewer/storage/` – `Local` and `S3` readers behind one behaviour.
 - `lib/pulumi_viewer/infra/` – Ash domain `PulumiViewer.Infra` (`Stack`, `Resource`, `Update`).
 - `assets/js/resource_graph.jsx` – xyflow graph, mounted as a LiveView hook.
+- `assets/js/code_block.js` – `CodeBlock` hook: any code or JSON panel, rendered with `@pierre/diffs`.
 
 ## Roadmap
 

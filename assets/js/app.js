@@ -24,13 +24,14 @@ import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
 import {hooks as colocatedHooks} from "phoenix-colocated/pulumi_viewer"
 import {ResourceGraph} from "./resource_graph.jsx"
+import {CodeBlock} from "./code_block.js"
 import topbar from "../vendor/topbar"
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks, ResourceGraph},
+  hooks: {...colocatedHooks, ResourceGraph, CodeBlock},
 })
 
 // Show progress bar on live navigation and form submits

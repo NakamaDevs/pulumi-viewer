@@ -10,6 +10,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@pierre/diffs": "^1.7.1",
     "@xyflow/react": "^12.12.1",
     "elkjs": "^0.10.2",
     "react": "^19.3.1",

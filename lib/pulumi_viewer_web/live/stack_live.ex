@@ -53,6 +53,29 @@ defmodule PulumiViewerWeb.StackLive do
     )
   end
 
+  attr :id, :string, required: true
+  attr :name, :string, required: true
+  attr :code, :string, required: true
+
+  # Rendered in the browser by @pierre/diffs (the diffs.com code viewer). The <pre> is the
+  # no-JS fallback and is replaced on mount.
+  defp code_block(assigns) do
+    ~H"""
+    <div
+      id={@id}
+      phx-hook="CodeBlock"
+      phx-update="ignore"
+      data-name={@name}
+      data-code={@code}
+      class="rounded overflow-hidden text-xs"
+    >
+      <pre class="bg-base-100 p-2 overflow-auto">{@code}</pre>
+    </div>
+    """
+  end
+
+  defp pretty(term), do: Jason.encode!(term, pretty: true)
+
   @impl true
   def render(assigns) do
     ~H"""
@@ -202,11 +225,38 @@ defmodule PulumiViewerWeb.StackLive do
             </dl>
             <details open>
               <summary class="text-sm font-semibold cursor-pointer">Outputs</summary>
-              <pre class="text-xs bg-base-100 p-2 rounded overflow-auto">{Jason.encode!(@selected.outputs, pretty: true)}</pre>
+              <.code_block
+                id={"out-#{@selected.urn}"}
+                name="outputs.json"
+                code={pretty(@selected.outputs)}
+              />
             </details>
             <details>
               <summary class="text-sm font-semibold cursor-pointer">Inputs</summary>
-              <pre class="text-xs bg-base-100 p-2 rounded overflow-auto">{Jason.encode!(@selected.inputs, pretty: true)}</pre>
+              <.code_block
+                id={"in-#{@selected.urn}"}
+                name="inputs.json"
+                code={pretty(@selected.inputs)}
+              />
+            </details>
+            <details>
+              <summary class="text-sm font-semibold cursor-pointer">Raw resource</summary>
+              <.code_block
+                id={"raw-#{@selected.urn}"}
+                name="resource.json"
+                code={
+                  pretty(
+                    Map.from_struct(@selected)
+                    |> Map.drop([
+                      :__meta__,
+                      :__metadata__,
+                      :__lateral_join_source__,
+                      :aggregates,
+                      :calculations
+                    ])
+                  )
+                }
+              />
             </details>
           </aside>
         </div>
