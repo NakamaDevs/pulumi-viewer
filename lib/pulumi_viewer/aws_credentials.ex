@@ -105,9 +105,20 @@ defmodule PulumiViewer.AwsCredentials do
       {^port, {:exit_status, status}} -> {IO.iodata_to_binary(acc), status}
     after
       left ->
-        System.cmd("kill", ["-9", Integer.to_string(os_pid)], stderr_to_stdout: true)
+        # Close first, while the port is surely open (after the kill the runtime can close it
+        # first, and Port.close would raise); then stop the OS process and drop late messages.
         Port.close(port)
+        System.cmd("kill", ["-9", Integer.to_string(os_pid)], stderr_to_stdout: true)
+        flush(port)
         :timeout
+    end
+  end
+
+  defp flush(port) do
+    receive do
+      {^port, _} -> flush(port)
+    after
+      0 -> :ok
     end
   end
 
