@@ -38,7 +38,7 @@ async function layout(graph) {
   })
   const pos = Object.fromEntries(res.children.map(c => [c.id, {x: c.x, y: c.y}]))
   return {
-    nodes: graph.nodes.map(n => ({...n, position: pos[n.id] || n.position})),
+    nodes: graph.nodes.map(n => ({...n, width: W, height: H, position: pos[n.id] || n.position})),
     edges: graph.edges.map(e => ({...e, style: EDGE[e.data.kind], markerEnd: {type: MarkerType.ArrowClosed}})),
   }
 }

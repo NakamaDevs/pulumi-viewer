@@ -1,0 +1,1 @@
+{"kind": "update", "startTime": 1795262400, "endTime": 1795262440, "message": "Add worker service", "result": "succeeded", "version": 4, "resourceChanges": {"create": 2, "same": 24}}

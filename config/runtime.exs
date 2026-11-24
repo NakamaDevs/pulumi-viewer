@@ -2,8 +2,17 @@ import Config
 
 # Pulumi backend to read, same form as `pulumi login`: s3://bucket[/prefix] or file://dir.
 # For an AWS emulator (Floci, AWS Emulator) also set AWS_ENDPOINT_URL.
-if url = System.get_env("PULUMI_BACKEND_URL") do
-  config :pulumi_viewer, backend_url: url
+cond do
+  url = System.get_env("PULUMI_BACKEND_URL") ->
+    config :pulumi_viewer, backend_url: url
+
+  config_env() == :prod ->
+    # release default: the bundled demo state
+    config :pulumi_viewer,
+      backend_url: "file://" <> Application.app_dir(:pulumi_viewer, "priv/demo/state")
+
+  true ->
+    :ok
 end
 
 config :ex_aws,
@@ -56,19 +65,21 @@ if config_env() == :prod do
   # want to use a different value for prod and you most likely don't want
   # to check this value into version control, so we use an environment
   # variable instead.
+  # A read-only tool with no login: a random key per boot is fine unless you run several replicas.
   secret_key_base =
-    System.get_env("SECRET_KEY_BASE") ||
-      raise """
-      environment variable SECRET_KEY_BASE is missing.
-      You can generate one by calling: mix phx.gen.secret
-      """
+    System.get_env("SECRET_KEY_BASE") || Base.encode64(:crypto.strong_rand_bytes(48))
 
-  host = System.get_env("PHX_HOST") || "example.com"
+  host = System.get_env("PHX_HOST") || "localhost"
+  scheme = System.get_env("PHX_SCHEME", "http")
+
+  public_port =
+    String.to_integer(System.get_env("PHX_PUBLIC_PORT", System.get_env("PORT", "4000")))
 
   config :pulumi_viewer, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
   config :pulumi_viewer, PulumiViewerWeb.Endpoint,
-    url: [host: host, port: 443, scheme: "https"],
+    url: [host: host, port: public_port, scheme: scheme],
+    check_origin: false,
     http: [
       # Enable IPv6 and bind on all interfaces.
       # Set it to  {0, 0, 0, 0, 0, 0, 0, 1} for local network only access.
@@ -83,8 +94,7 @@ if config_env() == :prod do
       :crypto.mac(
         :hmac,
         :sha256,
-        System.get_env("SECRET_KEY_BASE") ||
-          raise("environment variable SECRET_KEY_BASE is missing"),
+        secret_key_base,
         "ash keyset signing"
       )
 

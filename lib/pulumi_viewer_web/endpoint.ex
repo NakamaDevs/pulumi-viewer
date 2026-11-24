@@ -27,7 +27,9 @@ defmodule PulumiViewerWeb.Endpoint do
     only: PulumiViewerWeb.static_paths(),
     raise_on_missing_only: code_reloading?
 
-  if Mix.env() == :dev do
+  # Tidewave is optional: dev only, and off with TIDEWAVE=false. Never in releases.
+  if Mix.env() == :dev and Code.ensure_loaded?(Tidewave) and
+       System.get_env("TIDEWAVE", "true") not in ["false", "0"] do
     plug Tidewave
   end
 

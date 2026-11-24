@@ -4,7 +4,13 @@ defmodule PulumiViewer.Pulumi.GraphTest do
 
   setup do
     {:ok, cp} = Checkpoint.parse(File.read!("test/fixtures/state/.pulumi/stacks/demo/dev.json"))
-    %{graph: Graph.build(cp.resources)}
+    %{graph: Graph.build(cp.resources, stack_edges: true), resources: cp.resources}
+  end
+
+  test "hides parent edges from the root stack by default", %{resources: resources} do
+    g = Graph.build(resources)
+    refute Enum.any?(g.edges, &(&1.source =~ "pulumi:pulumi:Stack"))
+    assert Enum.any?(g.edges, &(&1.data.kind == "dependency"))
   end
 
   test "one node per resource, providers hidden by default", %{graph: g} do

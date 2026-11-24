@@ -6,6 +6,12 @@ defmodule PulumiViewer.Pulumi.Graph do
 
   def build(resources, opts \\ []) do
     providers? = Keyword.get(opts, :providers, false)
+    # every top-level resource is a child of the stack; those edges only add noise
+    stack_edges? = Keyword.get(opts, :stack_edges, false)
+
+    stack_urns =
+      for r <- resources, r.type == "pulumi:pulumi:Stack", into: MapSet.new(), do: r.urn
+
     kept = Enum.reject(resources, &(provider?(&1) and not providers?))
     urns = MapSet.new(kept, & &1.urn)
 
@@ -28,7 +34,11 @@ defmodule PulumiViewer.Pulumi.Graph do
 
     edges =
       Enum.flat_map(kept, fn r ->
-        parent = if r.parent_urn, do: [{r.parent_urn, r.urn, "parent"}], else: []
+        parent =
+          if r.parent_urn && (stack_edges? or not MapSet.member?(stack_urns, r.parent_urn)),
+            do: [{r.parent_urn, r.urn, "parent"}],
+            else: []
+
         deps = Enum.map(r.dependencies, &{&1, r.urn, "dependency"})
 
         prov =

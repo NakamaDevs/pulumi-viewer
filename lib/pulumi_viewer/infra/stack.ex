@@ -43,7 +43,10 @@ defmodule PulumiViewer.Infra.Stack.Read do
             updated_at: cp.updated_at,
             pulumi_version: cp.pulumi_version
           }
-        end, max_concurrency: 8, timeout: 30_000)
+        end,
+        max_concurrency: 8,
+        timeout: 30_000
+      )
       |> Enum.map(fn {:ok, s} -> s end)
 
     {:ok, stacks}

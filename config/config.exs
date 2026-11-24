@@ -53,7 +53,7 @@ config :spark,
   ]
 
 config :pulumi_viewer,
-  backend_url: "file://test/fixtures/state",
+  backend_url: "file://priv/demo/state",
   ash_domains: [PulumiViewer.Infra],
   generators: [timestamp_type: :utc_datetime]
 
