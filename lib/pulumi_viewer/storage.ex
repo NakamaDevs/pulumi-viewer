@@ -31,86 +31,30 @@ defmodule PulumiViewer.Storage do
   def parse_url("cloudformation://" <> rest),
     do: {PulumiViewer.CloudFormation, PulumiViewer.CloudFormation.parse_url(rest)}
 
-  def parse_url(url),
-    do: {:error, "unsupported source URL #{url}: use file://, s3:// or cloudformation://"}
+  # tests register extra schemes (see test/support/failing_storage.ex)
+  def parse_url(url) do
+    [scheme | _] = String.split(url, "://", parts: 2)
 
-  @doc """
-  All sources, in the configured order: `[%{name, url, mod, cfg, error}]`. A bad URL or a
-  duplicate name is an `error` of that source only, so the other sources still load.
-  """
-  def sources do
-    {list, _seen} =
-      Enum.map_reduce(named_urls(), MapSet.new(), fn {name, url}, seen ->
-        src =
-          cond do
-            MapSet.member?(seen, name) ->
-              %{name: name, url: url, mod: nil, cfg: nil, error: "duplicate source name #{name}"}
-
-            true ->
-              case parse_url(url) do
-                {:error, why} ->
-                  %{name: name, url: url, mod: nil, cfg: nil, error: why}
-
-                {mod, cfg} ->
-                  %{name: name, url: url, mod: mod, cfg: with_name(cfg, name), error: nil}
-              end
-          end
-
-        {src, MapSet.put(seen, name)}
-      end)
-
-    list
-  end
-
-  @doc "The source with this name; the first source when the name is nil or empty."
-  def source(name) when name in [nil, ""], do: hd(sources())
-
-  def source(name),
-    do:
-      Enum.find(sources(), &(&1.name == name and &1.error == nil)) ||
-        Enum.find(sources(), &(&1.name == name))
-
-  def list(%{mod: mod, cfg: cfg}, prefix), do: mod.list(cfg, prefix)
-  def read(%{mod: mod, cfg: cfg}, key), do: mod.read(cfg, key)
-
-  defp named_urls do
-    entries =
-      case Application.get_env(:pulumi_viewer, :backend_urls) do
-        list when is_binary(list) -> split_entries(list)
-        _ -> []
-      end
-
-    case entries do
-      [_ | _] ->
-        entries
-        |> Enum.with_index(1)
-        |> Enum.map(fn {entry, i} ->
-          case String.split(entry, "=", parts: 2) do
-            [name, url] ->
-              if String.contains?(name, "://"), do: {"source#{i}", entry}, else: {name, url}
-
-            [url] ->
-              {"source#{i}", url}
-          end
-        end)
-
-      [] ->
-        [{"default", Application.fetch_env!(:pulumi_viewer, :backend_url)}]
+    case Application.get_env(:pulumi_viewer, :test_backends, %{})[scheme] do
+      nil -> raise ArgumentError, "unknown source URL #{inspect(url)}"
+      backend -> backend
     end
   end
 
-  # Split only at a comma that starts a new `[name=]scheme://` entry, so a comma inside a
-  # query value (`?prefix=a,b`) stays in its URL.
-  defp split_entries(list) do
-    list
-    |> String.split(~r/,(?=\s*(?:[^,=\s]+=)?[a-z][a-z0-9+.-]*:\/\/)/i)
-    |> Enum.map(&(&1 |> String.trim() |> String.trim(",") |> String.trim()))
-    |> Enum.reject(&(&1 == ""))
+  @doc """
+  The backend of one source (see `PulumiViewer.Sources`). The source name goes into an AWS
+  config: it keys the CloudFormation cache, because two sources can read the same region
+  with different profiles.
+  """
+  def for_source(%{name: name, url: url}) do
+    case parse_url(url) do
+      {mod, cfg} when is_map(cfg) -> {mod, Map.put(cfg, :name, name)}
+      other -> other
+    end
   end
 
-  # the name keys the cache and the credentials of AWS sources; a file source is just a path
-  defp with_name(cfg, name) when is_map(cfg), do: Map.put(cfg, :name, name)
-  defp with_name(cfg, _name), do: cfg
+  def list({mod, cfg}, prefix), do: mod.list(cfg, prefix)
+  def read({mod, cfg}, key), do: mod.read(cfg, key)
 
   defp split_query(rest) do
     case String.split(rest, "?", parts: 2) do

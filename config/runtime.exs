@@ -2,11 +2,6 @@ import Config
 
 # Pulumi backend to read, same form as `pulumi login`: s3://bucket[/prefix] or file://dir.
 # For an AWS emulator (Floci, AWS Emulator) also set AWS_ENDPOINT_URL.
-# Several sources at the same time: PULUMI_BACKEND_URLS="dev=cloudformation://us-east-1,prod=s3://state".
-if urls = System.get_env("PULUMI_BACKEND_URLS") do
-  config :pulumi_viewer, backend_urls: urls
-end
-
 cond do
   url = System.get_env("PULUMI_BACKEND_URL") ->
     config :pulumi_viewer, backend_url: url
@@ -20,11 +15,33 @@ cond do
     :ok
 end
 
+# Several sources at once: `name=url` entries separated by a newline, `;` or `,` (see
+# PulumiViewer.Sources). PULUMI_BACKEND_URLS is the older name of the same setting.
+# An empty PULUMI_VIEWER_SOURCES counts as unset.
+blank = fn v -> if v in [nil, ""] or String.replace(v, ~r/[\s,;]/, "") == "", do: nil, else: v end
+
+case blank.(System.get_env("PULUMI_VIEWER_SOURCES")) ||
+       blank.(System.get_env("PULUMI_BACKEND_URLS")) do
+  nil -> :ok
+  v -> config :pulumi_viewer, sources: v
+end
+
+# Credential chain: keys in the environment; then a host credential helper
+# (AWS_CONTAINER_CREDENTIALS_FULL_URI + AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE), which
+# PulumiViewer.HostCredentials reads and passes to each request; then AWS_PROFILE from ~/.aws
+# (also AWS SSO, refreshed every 30 s); then an instance role.
+present? = &(System.get_env(&1) not in [nil, ""])
+
+aws_profile =
+  if present?.("AWS_PROFILE"), do: [{:awscli, System.get_env("AWS_PROFILE"), 30}], else: []
+
+chain = &([{:system, &1}] ++ aws_profile ++ [:instance_role])
+
 config :ex_aws,
   region: System.get_env("AWS_REGION", "us-east-1"),
-  access_key_id: [{:system, "AWS_ACCESS_KEY_ID"}, :instance_role],
-  secret_access_key: [{:system, "AWS_SECRET_ACCESS_KEY"}, :instance_role],
-  security_token: [{:system, "AWS_SESSION_TOKEN"}, :instance_role]
+  access_key_id: chain.("AWS_ACCESS_KEY_ID"),
+  secret_access_key: chain.("AWS_SECRET_ACCESS_KEY"),
+  security_token: chain.("AWS_SESSION_TOKEN")
 
 # config/runtime.exs is executed for all environments, including
 # during releases. It is executed after compilation and before the

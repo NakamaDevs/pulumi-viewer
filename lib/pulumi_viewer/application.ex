@@ -7,11 +7,15 @@ defmodule PulumiViewer.Application do
 
   @impl true
   def start(_type, _args) do
+    PulumiViewer.Sources.validate!()
+
     children = [
       PulumiViewerWeb.Telemetry,
       {DNSCluster, query: Application.get_env(:pulumi_viewer, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: PulumiViewer.PubSub},
       PulumiViewer.CloudFormation.Cache,
+      PulumiViewer.HostCredentials,
+      {Task.Supervisor, name: PulumiViewer.TaskSupervisor},
       # Start a worker by calling: PulumiViewer.Worker.start_link(arg)
       # {PulumiViewer.Worker, arg},
       # Start to serve requests, typically the last entry

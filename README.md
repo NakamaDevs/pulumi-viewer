@@ -6,7 +6,9 @@ emulator. Point it at the same URL you use for `pulumi login`.
 
 What you can do with it:
 
-- **List every stack** in a backend, grouped by project, with resource count, last update and Pulumi version.
+- **Read several sources at once** (`PULUMI_VIEWER_SOURCES`): Pulumi file or S3 state and live CloudFormation side by side. One failing source shows its own error; the others still render.
+- **List every stack grouped by environment** (DEV, staging, PROD, then account-wide stacks such as `shared` and `ci`), then by source and project, with a Pulumi or CloudFormation badge, resource count, last update and Pulumi version. Filter by environment and source.
+- **Follow the same resource across sources**: a resource with the same physical ID in Pulumi and in CloudFormation links to the other stack.
 - **See a stack as a graph**: resources laid out by dependency, with parent and provider links (xyflow + ELK).
 - **Open any resource**: URN, physical ID, parent, inputs, outputs and raw JSON, highlighted with the [diffs.com](https://diffs.com) code viewer. Secrets stay encrypted (`[secret]`).
 - **Search resources** by name, type or physical ID.
@@ -66,21 +68,30 @@ The backend URL uses the same form as `pulumi login`. The viewer only lists and 
 | `.pulumi/stacks/<stack>.json[.gz]` | legacy (non project-scoped) stacks |
 | `.pulumi/history/<project>/<stack>/*.history.json` | update history |
 
-### Several sources at the same time
-
-Set `PULUMI_BACKEND_URLS` to a comma-separated list of `name=url`. The home page loads all of
-them in parallel and groups the stacks by source. A source that fails (for example, expired
-credentials) shows its own error, and the others still load.
+### Several sources
 
 ```sh
-PULUMI_BACKEND_URLS="dev=cloudformation://us-east-1?profile=dev-readonly,prod=cloudformation://us-east-1?profile=prod-readonly,shared=s3://pulumi-state/shared?profile=shared-readonly"
+PULUMI_VIEWER_SOURCES='pulumi=file:///state/pulumi;cloudformation=cloudformation://us-east-1'
 ```
 
-Each AWS source can use its own profile with `?profile=<name>`. When the `aws` CLI is installed,
-the viewer gets the credentials with `aws configure export-credentials`, so every profile type
-works (keys, SSO, `aws login`, assumed roles). Without the CLI (for example in the Docker image),
-ExAws reads `~/.aws` itself (keys and SSO only). A source without a profile uses the `AWS_*`
-environment variables. A single `PULUMI_BACKEND_URL` still works and is one source.
+Separate the `name=url` entries with a newline, `;` or `,`. A comma inside a query value
+(`?prefix=a,b`) stays in its URL. Each URL is `file://`, `s3://` or `cloudformation://`.
+`PULUMI_BACKEND_URLS` is the older name of the same setting. `PULUMI_BACKEND_URL` alone still
+works (one source named `default`). Stack pages are at `/sources/<source>/stacks/<project>/<stack>`;
+`/stacks/<project>/<stack>` reads the first source. A source that fails (for example, expired
+credentials) shows its own error, and the others still load.
+
+Each AWS source can use its own profile with `?profile=<name>`, for example
+`prod=cloudformation://us-east-1?profile=prod-readonly`. When the `aws` CLI is installed, the
+viewer gets the credentials with `aws configure export-credentials`, so every profile type works
+(keys, SSO, `aws login`, assumed roles). Without the CLI (for example in the Docker image), ExAws
+reads `~/.aws` itself (keys and SSO only). A source with a profile never falls back to other
+credentials. A source without a profile uses the credential chain below.
+
+Environment of a stack: for Pulumi the stack name (`dev`, `staging`, `prod`, also
+`<env>-<anything>` and `<anything>-<env>`); for CloudFormation the first name token that is
+`dev|prod|staging|shared|ci`. `shared`, `ci` and stacks without an environment are account-wide.
+Pulumi state is read again on each page load; CloudFormation responses are cached for 60 s.
 
 ### CloudFormation source
 

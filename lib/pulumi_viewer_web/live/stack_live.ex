@@ -5,25 +5,69 @@ defmodule PulumiViewerWeb.StackLive do
 
   @impl true
   def mount(%{"project" => project, "stack" => stack} = params, _session, socket) do
-    source = params["source"]
     project = if project == "_", do: nil, else: project
 
-    socket =
-      socket
-      |> assign(project: project, stack: stack, source: source, page_title: "#{project}/#{stack}")
-      |> assign(tab: "graph", q: "", selected: nil, providers: false, updates: nil)
+    case PulumiViewer.Sources.fetch(params["source"]) do
+      {:ok, src} ->
+        socket =
+          socket
+          |> assign(project: project, stack: stack, source: src)
+          |> assign(page_title: "#{src.name}/#{project}/#{stack}")
+          |> assign(tab: "graph", q: "", selected: nil, providers: false, updates: nil)
+          |> assign_links(src)
 
-    case Infra.list_resources(project, stack, source) do
-      {:ok, resources} -> {:ok, socket |> assign(resources: resources, missing: false) |> graph()}
-      {:error, e} -> {:ok, assign(socket, resources: [], missing: problem(e), graph_json: "{}")}
+        case Infra.list_resources(project, stack, src.name) do
+          {:ok, resources} ->
+            {:ok, socket |> assign(resources: resources, missing: false) |> graph()}
+
+          {:error, e} ->
+            {:ok, assign(socket, resources: [], missing: problem(e), graph_json: "{}")}
+        end
+
+      _ ->
+        {:ok,
+         assign(socket,
+           project: project,
+           stack: stack,
+           source: %{name: params["source"], kind: nil},
+           page_title: stack,
+           tab: "graph",
+           resources: [],
+           selected: nil,
+           providers: false,
+           updates: nil,
+           q: "",
+           links: %{},
+           graph_json: "{}",
+           missing: "Unknown source #{params["source"]}."
+         )}
     end
   end
+
+  # Same physical ID in a source of the other kind; loaded after the page renders.
+  defp assign_links(socket, src) do
+    if connected?(socket) and length(PulumiViewer.Sources.all()) > 1 do
+      socket
+      |> assign(links: %{})
+      |> start_async(:links, fn -> PulumiViewer.Infra.Links.index(src.kind) end)
+    else
+      assign(socket, links: %{})
+    end
+  end
+
+  @impl true
+  def handle_async(:links, {:ok, links}, socket), do: {:noreply, assign(socket, links: links)}
+  def handle_async(:links, _, socket), do: {:noreply, socket}
 
   @impl true
   def handle_event("tab", %{"tab" => "history"}, socket) do
     updates =
       socket.assigns.updates ||
-        Infra.list_updates!(socket.assigns.project, socket.assigns.stack, socket.assigns.source)
+        Infra.list_updates!(
+          socket.assigns.project,
+          socket.assigns.stack,
+          socket.assigns.source.name
+        )
 
     {:noreply, assign(socket, tab: "history", updates: updates)}
   end
@@ -82,6 +126,9 @@ defmodule PulumiViewerWeb.StackLive do
     """
   end
 
+  defp kind_label(:cloudformation), do: "CloudFormation"
+  defp kind_label(_), do: "Pulumi"
+
   defp pretty(term), do: Jason.encode!(term, pretty: true)
 
   @impl true
@@ -91,13 +138,13 @@ defmodule PulumiViewerWeb.StackLive do
       <div class="breadcrumbs text-sm">
         <ul>
           <li><.link navigate={~p"/"}>Stacks</.link></li>
-          <li :if={@source}>{@source}</li>
+          <li>{@source.name}</li>
           <li>{@project || "(no project)"}</li>
           <li class="font-semibold">{@stack}</li>
         </ul>
       </div>
 
-      <div :if={@missing} class="alert alert-warning">{@missing}</div>
+      <div :if={@missing} id="stack-missing" class="alert alert-warning">{@missing}</div>
 
       <div :if={!@missing} class="space-y-4">
         <div class="flex items-center gap-2">
@@ -226,6 +273,18 @@ defmodule PulumiViewerWeb.StackLive do
               <div :if={@selected.id}>
                 <dt class="opacity-60">Physical ID</dt>
                 <dd class="font-mono break-all">{@selected.id}</dd>
+              </div>
+              <div :for={l <- Map.get(@links, @selected.id || "", [])} class="also-in">
+                <dt class="opacity-60">Also in</dt>
+                <dd>
+                  <.link
+                    class="link"
+                    navigate={~p"/sources/#{l.source}/stacks/#{l.project || "_"}/#{l.stack}"}
+                  >
+                    {kind_label(l.kind)} stack {l.stack}
+                  </.link>
+                  <span class="opacity-60">({l.source})</span>
+                </dd>
               </div>
               <div :if={@selected.parent_urn}>
                 <dt class="opacity-60">Parent</dt>

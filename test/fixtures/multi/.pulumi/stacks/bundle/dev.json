@@ -1,0 +1,13 @@
+{
+  "version": 3,
+  "checkpoint": {
+    "stack": "organization/bundle/dev",
+    "latest": {
+      "manifest": {"time": "2026-11-22T10:00:00.000Z", "magic": "x", "version": "v3.200.0"},
+      "resources": [
+        {"urn": "urn:pulumi:dev::bundle::pulumi:pulumi:Stack::bundle-dev", "custom": false, "type": "pulumi:pulumi:Stack"},
+        {"urn": "urn:pulumi:dev::bundle::aws:iam/role:Role::role-dev", "custom": true, "id": "role-1", "type": "aws:iam/role:Role", "outputs": {"name": "role-dev"}}
+      ]
+    }
+  }
+}

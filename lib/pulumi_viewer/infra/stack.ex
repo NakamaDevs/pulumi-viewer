@@ -2,7 +2,6 @@ defmodule PulumiViewer.Infra.Stack do
   use Ash.Resource,
     domain: PulumiViewer.Infra,
     data_layer: Ash.DataLayer.Simple,
-    # the optional source argument picks one of the configured sources
     primary_read_warning?: false
 
   actions do
@@ -16,11 +15,14 @@ defmodule PulumiViewer.Infra.Stack do
   attributes do
     attribute :key, :string, primary_key?: true, allow_nil?: false, public?: true
     attribute :source, :string, public?: true
+    attribute :kind, :atom, public?: true
+    attribute :environment, :term, public?: true
     attribute :project, :string, public?: true
     attribute :name, :string, public?: true
     attribute :resource_count, :integer, public?: true
     attribute :updated_at, :utc_datetime_usec, public?: true
     attribute :pulumi_version, :string, public?: true
+    attribute :error, :string, public?: true
   end
 end
 
@@ -28,67 +30,56 @@ defmodule PulumiViewer.Infra.Stack.Read do
   use Ash.Resource.ManualRead
   alias PulumiViewer.Infra.{Stack, State}
 
-  @empty %{resources: [], updated_at: nil, pulumi_version: nil}
-
   @impl true
   def read(query, _data_layer_query, _opts, _context) do
-    source = PulumiViewer.Storage.source(query.arguments[:source])
-
-    with true <- source != nil || {:error, :unknown_source},
-         {:ok, stacks} <- source_stacks(source) do
-      read_all(source.name, stacks)
+    with {:ok, src} <- State.source(query.arguments[:source]),
+         {:ok, stacks} <- State.stacks(src) do
+      read_all(src, stacks)
     end
   end
 
-  defp source_stacks(source) do
-    case State.stacks(source.name) do
-      {:error, %PulumiViewer.CloudFormation.Error{} = e} -> {:error, e}
-      other -> other
-    end
-  end
-
-  defp read_all(source, stacks) do
-    stacks =
-      stacks
-      |> Task.async_stream(
-        fn s -> read_one(source, s) end,
+  defp read_all(src, stacks) do
+    results =
+      Task.Supervisor.async_stream_nolink(
+        PulumiViewer.TaskSupervisor,
+        stacks,
+        fn s ->
+          case State.checkpoint(src, s.project, s.stack) do
+            {:ok, cp} -> {:ok, stack(src, s, cp)}
+            # credentials or access: the whole source fails, with a clear message
+            {:error, %PulumiViewer.CloudFormation.Error{source?: true} = e} -> {:error, e}
+            # one stack failed (deleted, denied for this stack, unreadable): show its message
+            {:error, e} -> {:ok, failed(src, s, PulumiViewer.error_message(e))}
+            _ -> {:ok, failed(src, s, nil)}
+          end
+        end,
         max_concurrency: 8,
         timeout: 60_000,
         on_timeout: :kill_task
       )
       |> Enum.zip(stacks)
       |> Enum.map(fn
-        {{:ok, r}, _s} -> r
-        # a stack that takes too long is listed empty, like an unreadable one
-        {{:exit, _}, s} -> {:ok, stack(source, s, @empty)}
+        {{:ok, r}, _} -> r
+        {{:exit, :timeout}, s} -> {:ok, failed(src, s, "Timed out while reading this stack.")}
+        {{:exit, reason}, s} -> {:ok, failed(src, s, "Read failed: #{inspect(reason)}")}
       end)
 
-    case Enum.find(stacks, &match?({:error, _}, &1)) do
-      nil -> {:ok, Enum.map(stacks, &elem(&1, 1))}
+    case Enum.find(results, &match?({:error, _}, &1)) do
+      nil -> {:ok, Enum.map(results, &elem(&1, 1))}
       error -> error
     end
   end
 
-  # Runs in its own linked task: a raise here would kill the caller, so catch it here.
-  defp read_one(source, s) do
-    case State.checkpoint(source, s.project, s.stack) do
-      {:ok, cp} -> {:ok, stack(source, s, cp)}
-      # a source error (credentials, access) is shown instead of an empty list
-      {:error, %PulumiViewer.CloudFormation.Error{} = e} -> {:error, e}
-      _ -> {:ok, stack(source, s, @empty)}
-    end
-  rescue
-    e in PulumiViewer.CloudFormation.Error -> {:error, e}
-    # a corrupt checkpoint (for example bad gzip) lists the stack with no resources
-    _ -> {:ok, stack(source, s, @empty)}
-  catch
-    :exit, _ -> {:ok, stack(source, s, @empty)}
+  defp failed(src, s, msg) do
+    %{stack(src, s, %{resources: [], updated_at: nil, pulumi_version: nil}) | error: msg}
   end
 
-  defp stack(source, s, cp) do
+  defp stack(src, s, cp) do
     %Stack{
-      key: source <> "/" <> s.key,
-      source: source,
+      key: src.name <> ":" <> s.key,
+      source: src.name,
+      kind: src.kind,
+      environment: PulumiViewer.Environment.of(src.kind, s.stack),
       project: s.project,
       name: s.stack,
       resource_count: length(cp.resources),

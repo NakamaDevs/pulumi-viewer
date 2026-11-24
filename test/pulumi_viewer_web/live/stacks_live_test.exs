@@ -7,7 +7,7 @@ defmodule PulumiViewerWeb.StacksLiveTest do
     assert html =~ "demo"
     assert html =~ "dev"
     assert html =~ "4 resources"
-    assert has_element?(view, ~s|a[href="/stacks/demo/dev"]|)
+    assert has_element?(view, ~s|a[href="/sources/default/stacks/demo/dev"]|)
   end
 
   test "stack page shows graph, resources, history and a detail panel", %{conn: conn} do

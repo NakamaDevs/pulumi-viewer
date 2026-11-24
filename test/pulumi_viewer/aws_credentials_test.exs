@@ -74,8 +74,22 @@ defmodule PulumiViewer.AwsCredentialsTest do
     assert {:error, e} = AwsCredentials.opts("mfa")
     assert e.message =~ "did not answer"
     pid = pidfile |> File.read!() |> String.trim()
-    Process.sleep(100)
-    assert {_, 1} = System.cmd("kill", ["-0", pid], stderr_to_stdout: true)
+    assert gone?(pid, 50)
+  end
+
+  # `kill -9` is sent before the timeout returns; the OS can take a moment to remove the process.
+  # Poll `kill -0` (exit 1: no such process) a bounded number of times instead of one fixed sleep.
+  defp gone?(_pid, 0), do: false
+
+  defp gone?(pid, tries) do
+    case System.cmd("kill", ["-0", pid], stderr_to_stdout: true) do
+      {_, 1} ->
+        true
+
+      _ ->
+        Process.sleep(20)
+        gone?(pid, tries - 1)
+    end
   end
 
   test "no profile uses the keys in the environment" do

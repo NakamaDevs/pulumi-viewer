@@ -1,106 +1,223 @@
 defmodule PulumiViewerWeb.StacksLive do
   use PulumiViewerWeb, :live_view
+  alias PulumiViewer.{Environment, Sources}
 
   @impl true
   def mount(_params, _session, socket) do
-    {:ok, socket |> assign(:page_title, "Stacks") |> load()}
+    {:ok, socket |> assign(page_title: "Stacks") |> assign_filter("all", "all") |> load()}
   end
 
   @impl true
   def handle_event("refresh", _, socket), do: {:noreply, load(socket)}
 
-  # Every source loads at the same time; one that fails shows its own error.
-  defp load(socket) do
-    sources = PulumiViewer.Storage.sources()
+  def handle_event("filter", params, socket),
+    do:
+      {:noreply,
+       assign_filter(
+         socket,
+         params["env"] || socket.assigns.env,
+         params["source"] || socket.assigns.source
+       )}
 
-    sources =
-      sources
-      |> Task.async_stream(&load_source/1,
+  defp assign_filter(socket, env, source) do
+    assign(socket,
+      env: env,
+      source: source,
+      filter_form: to_form(%{"env" => env, "source" => source})
+    )
+  end
+
+  # Each source loads on its own, so one failing source does not hide the others.
+  defp load(socket) do
+    results =
+      Task.Supervisor.async_stream_nolink(
+        PulumiViewer.TaskSupervisor,
+        Sources.all(),
+        fn s ->
+          case PulumiViewer.Infra.list_stacks(s.name) do
+            {:ok, stacks} -> {s, {:ok, stacks}}
+            {:error, e} -> {s, {:error, PulumiViewer.error_message(e)}}
+          end
+        end,
+        max_concurrency: 4,
         timeout: 120_000,
-        on_timeout: :kill_task,
-        ordered: true
+        on_timeout: :kill_task
       )
-      |> Enum.zip(sources)
+      |> Enum.zip(Sources.all())
       |> Enum.map(fn
-        {{:ok, s}, _src} -> s
-        {{:exit, _}, src} -> failed(src, "#{src.name} did not answer within 120 s.")
+        {{:ok, r}, _} -> r
+        {{:exit, :timeout}, s} -> {s, {:error, "Timed out while reading this source."}}
+        {{:exit, reason}, s} -> {s, {:error, "Read failed: #{inspect(reason)}"}}
       end)
 
-    assign(socket, sources: sources, multiple?: length(sources) > 1)
+    assign(socket, results: results)
   end
 
-  # a bad URL or a duplicate name: show the config error, do not read another source by name
-  defp load_source(%{error: why} = src) when is_binary(why), do: failed(src, why)
+  @doc false
+  # [{group, [{source_name, [{project, [stack]}]}]}], environments first, then "Account-wide"
+  def grouped(stacks) do
+    stacks
+    |> Enum.group_by(&group/1)
+    |> Enum.sort_by(fn {g, _} -> group_sort(g) end)
+    |> Enum.map(fn {g, in_group} ->
+      by_source =
+        in_group
+        |> Enum.group_by(& &1.source)
+        |> Enum.sort()
+        |> Enum.map(fn {src, ss} ->
+          {src,
+           ss
+           |> Enum.group_by(&(&1.project || "(no project)"))
+           |> Enum.sort()
+           |> Enum.map(fn {p, list} -> {p, Enum.sort_by(list, & &1.name)} end)}
+        end)
 
-  defp load_source(src) do
-    case PulumiViewer.Infra.list_stacks(src.name) do
-      {:ok, stacks} ->
-        %{
-          name: src.name,
-          url: src.url,
-          error: nil,
-          stacks: Enum.group_by(stacks, &(&1.project || "(no project)"))
-        }
-
-      {:error, e} ->
-        failed(src, PulumiViewer.error_message(e))
-    end
-  rescue
-    # a source that raises (for example S3 without access) must not take down the page
-    e -> failed(src, PulumiViewer.error_message(e))
-  catch
-    :exit, _ -> failed(src, "#{src.name} stopped while it loaded its stacks.")
+      {g, by_source}
+    end)
   end
 
-  defp failed(src, message), do: %{name: src.name, url: src.url, error: message, stacks: %{}}
+  defp group(%{environment: {:env, _} = e}), do: e
+  defp group(_), do: :account
 
-  # keep single-source links short: /stacks/demo/dev
-  defp source_query(true, source), do: [source: source]
-  defp source_query(false, _source), do: []
+  defp group_sort(:account), do: {1, 0, ""}
+  defp group_sort(e), do: Environment.sort_key(e)
+
+  defp group_label(:account), do: "Account-wide"
+  defp group_label(e), do: Environment.label(e)
+
+  defp env_value(:account), do: "account"
+  defp env_value({:env, e}), do: e
+
+  defp visible(results, env, source) do
+    for {s, {:ok, stacks}} <- results,
+        source in ["all", s.name],
+        st <- stacks,
+        env == "all" or env_value(group(st)) == env,
+        do: st
+  end
+
+  defp env_options(results) do
+    for({_, {:ok, stacks}} <- results, st <- stacks, do: group(st))
+    |> Enum.uniq()
+    |> Enum.sort_by(&group_sort/1)
+    |> Enum.map(&{group_label(&1), env_value(&1)})
+  end
+
+  defp kind_label(:cloudformation), do: "CloudFormation"
+  defp kind_label(_), do: "Pulumi"
+
+  defp env_tag({_, v}), do: v
+
+  defp select_class,
+    do:
+      "rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:bg-zinc-900 dark:border-zinc-700"
+
+  defp stack_path(s), do: ~p"/sources/#{s.source}/stacks/#{s.project || "_"}/#{s.name}"
 
   @impl true
   def render(assigns) do
+    assigns =
+      assign(assigns,
+        groups: grouped(visible(assigns.results, assigns.env, assigns.source)),
+        env_options: env_options(assigns.results)
+      )
+
     ~H"""
     <Layouts.app flash={@flash}>
-      <div class="flex items-center justify-between">
+      <div class="flex flex-wrap items-center justify-between gap-2">
         <h1 class="text-xl font-semibold">Stacks</h1>
-        <button class="btn btn-sm" phx-click="refresh">
-          <.icon name="hero-arrow-path" class="size-4" /> Refresh
-        </button>
-      </div>
-
-      <div :for={src <- @sources} class="space-y-4">
-        <h2 :if={@multiple?} class="text-lg font-semibold flex items-baseline gap-2 pt-2">
-          {src.name} <code class="text-xs font-normal opacity-60">{src.url}</code>
-        </h2>
-        <div :if={src.error} class="alert alert-error">
-          <span :if={@multiple?} class="font-semibold">{src.name}:</span> {src.error}
-        </div>
-        <p :if={!src.error and src.stacks == %{}} class="opacity-60">
-          No stacks found in <code>{src.url}</code>.
-        </p>
-
-        <section :for={{project, stacks} <- Enum.sort(src.stacks)} class="space-y-2">
-          <h3 class="text-sm uppercase tracking-wide opacity-60">{project}</h3>
-          <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <.link
-              :for={s <- Enum.sort_by(stacks, & &1.name)}
-              navigate={
-                ~p"/stacks/#{s.project || "_"}/#{s.name}?#{source_query(@multiple?, s.source)}"
-              }
-              class="card bg-base-200 hover:bg-base-300 transition p-4"
+        <.form for={@filter_form} id="filters" phx-change="filter" class="flex gap-2">
+          <select
+            id={@filter_form[:env].id}
+            name={@filter_form[:env].name}
+            class={select_class()}
+            aria-label="Environment"
+          >
+            <option value="all" selected={@filter_form[:env].value == "all"}>All environments</option>
+            <option
+              :for={{label, v} <- @env_options}
+              value={v}
+              selected={@filter_form[:env].value == v}
             >
-              <div class="font-semibold">{s.name}</div>
-              <div class="text-sm opacity-70">{s.resource_count} resources</div>
-              <div class="text-xs opacity-50">
-                {if s.updated_at,
-                  do: Calendar.strftime(s.updated_at, "%Y-%m-%d %H:%M UTC"),
-                  else: "never updated"} · {s.pulumi_version}
-              </div>
-            </.link>
-          </div>
-        </section>
+              {label}
+            </option>
+          </select>
+          <select
+            id={@filter_form[:source].id}
+            name={@filter_form[:source].name}
+            class={select_class()}
+            aria-label="Source"
+          >
+            <option value="all" selected={@filter_form[:source].value == "all"}>All sources</option>
+            <option
+              :for={{s, _} <- @results}
+              value={s.name}
+              selected={@filter_form[:source].value == s.name}
+            >
+              {s.name}
+            </option>
+          </select>
+          <button type="button" class="btn btn-sm" phx-click="refresh">
+            <.icon name="hero-arrow-path" class="size-4" /> Refresh
+          </button>
+        </.form>
       </div>
+
+      <div
+        :for={{s, {:error, msg}} <- @results}
+        id={"source-error-#{s.name}"}
+        class="alert alert-error flex-col items-start"
+      >
+        <div class="font-semibold">{s.name} <span class="font-mono text-xs">{s.url}</span></div>
+        <div>{msg}</div>
+      </div>
+
+      <p
+        :for={{s, {:ok, []}} <- @results}
+        id={"source-empty-#{s.name}"}
+        class="opacity-60"
+      >
+        No stacks found in <code>{s.name}</code> (<code>{s.url}</code>).
+      </p>
+
+      <section :for={{g, by_source} <- @groups} id={"group-#{env_value(g)}"} class="space-y-3">
+        <h2 class="text-lg font-semibold">{group_label(g)}</h2>
+        <div :for={{src, projects} <- by_source} class="space-y-2 pl-2">
+          <div :for={{project, stacks} <- projects} class="space-y-2">
+            <h3 class="text-sm uppercase tracking-wide opacity-60">{src} · {project}</h3>
+            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <.link
+                :for={s <- stacks}
+                navigate={stack_path(s)}
+                class="card bg-base-200 hover:bg-base-300 transition p-4"
+              >
+                <div class="flex items-center justify-between gap-2">
+                  <span class="font-semibold truncate">{s.name}</span>
+                  <span class="badge badge-sm badge-outline">{env_tag(s.environment)}</span>
+                </div>
+                <div class="text-sm opacity-70">
+                  {s.resource_count} resources
+                  <span
+                    data-kind={s.kind}
+                    class={[
+                      "badge badge-xs ml-1",
+                      if(s.kind == :cloudformation, do: "badge-warning", else: "badge-info")
+                    ]}
+                  >
+                    {kind_label(s.kind)}
+                  </span>
+                </div>
+                <div :if={s.error} class="text-xs text-error">{s.error}</div>
+                <div class="text-xs opacity-50">
+                  {if s.updated_at,
+                    do: Calendar.strftime(s.updated_at, "%Y-%m-%d %H:%M UTC"),
+                    else: "never updated"} · {s.pulumi_version}
+                </div>
+              </.link>
+            </div>
+          </div>
+        </div>
+      </section>
     </Layouts.app>
     """
   end

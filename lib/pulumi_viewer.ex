@@ -4,12 +4,16 @@ defmodule PulumiViewer do
   @doc "A short message for an error, without the Ash wrapper and stack trace of a source error."
   def error_message(%PulumiViewer.CloudFormation.Error{message: m}), do: m
 
-  def error_message(e) do
+  def error_message(:not_found), do: "Stack not found."
+
+  def error_message(e) when is_exception(e) do
     case find_source_error(e) do
       nil -> Exception.message(e)
       inner -> inner.message
     end
   end
+
+  def error_message(e), do: "Read failed: " <> inspect(e, limit: 5, printable_limit: 200)
 
   defp find_source_error(%PulumiViewer.CloudFormation.Error{} = e), do: e
 
@@ -24,17 +28,13 @@ defmodule PulumiViewer do
 
   defp find_source_error(_), do: nil
 
-  @doc "Backend URL plus the S3 endpoint when one is set, for the header."
-  def backend_label do
-    url =
-      case PulumiViewer.Storage.sources() do
-        [one] -> one.url
-        many -> Enum.map_join(many, " · ", & &1.name)
-      end
+  @doc "One `name: url` label per source, plus the S3 endpoint when one is set, for the header."
+  def sources_label do
+    ep = System.get_env("AWS_ENDPOINT_URL_S3") || System.get_env("AWS_ENDPOINT_URL")
 
-    case System.get_env("AWS_ENDPOINT_URL_S3") || System.get_env("AWS_ENDPOINT_URL") do
-      nil -> url
-      ep -> "#{url} @ #{ep}"
+    for s <- PulumiViewer.Sources.all() do
+      label = "#{s.name}: #{s.url}"
+      if ep && String.starts_with?(s.url, "s3://"), do: "#{label} @ #{ep}", else: label
     end
   end
 end

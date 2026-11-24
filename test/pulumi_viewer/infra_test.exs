@@ -23,3 +23,26 @@ defmodule PulumiViewer.InfraTest do
     assert older.result == "failed"
   end
 end
+
+defmodule PulumiViewer.InfraFreshStateTest do
+  use ExUnit.Case, async: false
+
+  test "Pulumi state is read again on each load (no cache across page loads)" do
+    dir = Path.join(System.tmp_dir!(), "pv-fresh-#{System.unique_integer([:positive])}")
+    stacks = Path.join(dir, ".pulumi/stacks/bundle")
+    File.mkdir_p!(stacks)
+    File.cp!("test/fixtures/multi/.pulumi/stacks/bundle/dev.json", Path.join(stacks, "dev.json"))
+    Application.put_env(:pulumi_viewer, :sources, "p=file://#{dir}")
+
+    on_exit(fn ->
+      Application.delete_env(:pulumi_viewer, :sources)
+      File.rm_rf!(dir)
+    end)
+
+    assert ["dev"] = PulumiViewer.Infra.list_stacks!("p") |> Enum.map(& &1.name)
+    File.cp!(Path.join(stacks, "dev.json"), Path.join(stacks, "prod.json"))
+
+    assert ["dev", "prod"] =
+             PulumiViewer.Infra.list_stacks!("p") |> Enum.map(& &1.name) |> Enum.sort()
+  end
+end

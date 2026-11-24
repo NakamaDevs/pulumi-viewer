@@ -1,60 +1,91 @@
 defmodule PulumiViewer.Infra.State do
-  @moduledoc false
-  alias PulumiViewer.{CloudFormation, Storage}
+  @moduledoc """
+  Reads stacks, checkpoints and updates of one source. Pulumi state is read again on each call
+  (resources move between stacks during the day); CloudFormation calls have a 60 s cache.
+  """
+  alias PulumiViewer.{CloudFormation, Sources, Storage}
   alias PulumiViewer.Pulumi.{Checkpoint, History, Layout}
 
-  # Every function takes a source name; nil means the first source.
-  def stacks(source_name) do
-    case Storage.source(source_name) do
-      nil -> {:error, :unknown_source}
-      %{error: why} when is_binary(why) -> {:error, %CloudFormation.Error{message: why}}
-      %{mod: CloudFormation, cfg: cfg} -> CloudFormation.stacks(cfg)
-      src -> {:ok, Storage.list(src, ".pulumi/stacks/") |> Layout.stacks()}
+  @doc "A source map, or a source name (`nil` is the first source)."
+  def source(%{url: _} = s), do: {:ok, s}
+  def source(name), do: Sources.fetch(name)
+
+  def stacks(src) do
+    with {:ok, s} <- source(src) do
+      case Storage.for_source(s) do
+        {CloudFormation, cfg} ->
+          CloudFormation.stacks(cfg)
+
+        backend ->
+          safe(fn -> {:ok, Storage.list(backend, ".pulumi/stacks/") |> Layout.stacks()} end)
+      end
     end
   end
 
-  def checkpoint(source_name, project, stack) do
-    case Storage.source(source_name) do
-      nil ->
-        {:error, :not_found}
+  def checkpoint(src, project, stack) do
+    with {:ok, s} <- source(src) do
+      case Storage.for_source(s) do
+        {CloudFormation, cfg} ->
+          CloudFormation.checkpoint(cfg, stack)
 
-      %{error: why} when is_binary(why) ->
-        {:error, %CloudFormation.Error{message: why}}
+        backend ->
+          with {:ok, stacks} <- stacks(s) do
+            case Enum.find(stacks, &(&1.project == blank(project) and &1.stack == stack)) do
+              nil ->
+                {:error, :not_found}
 
-      %{mod: CloudFormation, cfg: cfg} ->
-        CloudFormation.checkpoint(cfg, stack)
+              %{key: key} ->
+                safe(fn ->
+                  with {:ok, body} <- Storage.read(backend, key), do: Checkpoint.parse(body)
+                end)
+            end
+          end
+      end
+    end
+  end
 
-      src ->
-        {:ok, stacks} = stacks(source_name)
+  def updates(src, project, stack, limit \\ 50) do
+    case source(src) do
+      {:ok, s} ->
+        case Storage.for_source(s) do
+          {CloudFormation, cfg} ->
+            CloudFormation.updates(cfg, stack, limit)
 
-        case Enum.find(stacks, &(&1.project == blank(project) and &1.stack == stack)) do
-          nil -> {:error, :not_found}
-          %{key: key} -> with {:ok, body} <- Storage.read(src, key), do: Checkpoint.parse(body)
+          backend ->
+            case safe(fn -> {:ok, pulumi_updates(backend, project, stack, limit)} end) do
+              {:ok, updates} -> updates
+              _ -> []
+            end
         end
+
+      _ ->
+        []
     end
   end
 
-  def updates(source_name, project, stack, limit \\ 50) do
-    case Storage.source(source_name) do
-      nil -> []
-      %{error: why} when is_binary(why) -> []
-      %{mod: CloudFormation, cfg: cfg} -> CloudFormation.updates(cfg, stack, limit)
-      src -> pulumi_updates(src, project, stack, limit)
-    end
-  end
-
-  defp pulumi_updates(src, project, stack, limit) do
+  defp pulumi_updates(backend, project, stack, limit) do
     Layout.history_prefix(blank(project), stack)
-    |> then(&Storage.list(src, &1))
+    |> then(&Storage.list(backend, &1))
     |> Layout.history_keys()
     |> Enum.take(limit)
     |> Enum.flat_map(fn key ->
-      with {:ok, body} <- Storage.read(src, key),
+      with {:ok, body} <- Storage.read(backend, key),
            {:ok, u} <- History.parse(body),
            do: [u],
            else: (_ -> [])
     end)
   end
+
+  # An S3 source with no access or a missing folder raises; show it as this source's error.
+  defp safe(fun) do
+    fun.()
+  rescue
+    e -> {:error, read_error(Exception.message(e))}
+  catch
+    :exit, reason -> {:error, read_error(inspect(reason))}
+  end
+
+  defp read_error(msg), do: %CloudFormation.Error{message: "Cannot read the state: " <> msg}
 
   defp blank(""), do: nil
   defp blank(v), do: v

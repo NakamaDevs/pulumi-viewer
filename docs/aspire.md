@@ -18,8 +18,11 @@ or Node. To run your own changes, build the `Dockerfile` at the repository root 
 | --- | --- | --- |
 | `PULUMI_BACKEND_URLS` | none | several sources at the same time: `name=url,name=url`; each AWS URL can add `?profile=<name>` (see the README) |
 | `PULUMI_BACKEND_URL` | bundled demo state | `s3://<bucket>[/prefix]` or `file://<dir>`, same form as `pulumi login`; or `cloudformation://<region>[?prefix=<p>]` for live CloudFormation stacks |
+| `PULUMI_VIEWER_SOURCES` | none | several sources: `name=url` per line or `;`-separated, for example `pulumi=file:///state/pulumi;cloudformation=cloudformation://us-east-1`; overrides `PULUMI_BACKEND_URL` |
 | `AWS_REGION` | `us-east-1` | region of the state bucket |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN` | none | credentials; or an instance role on EC2/ECS |
+| `AWS_CONTAINER_CREDENTIALS_FULL_URI`, `AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE` | none | credentials endpoint on the host (ECS JSON: `AccessKeyId`, `SecretAccessKey`, `Token`, `Expiration`); the viewer gets new credentials 60 s before `Expiration`. Use it for profiles ExAws cannot read, such as `aws login`. If the helper does not answer, only the AWS sources show an error |
+| `AWS_PROFILE` | none | a profile from a mounted `~/.aws` (also SSO) |
 | `AWS_ENDPOINT_URL` (or `AWS_ENDPOINT_URL_S3`) | none | S3 on an emulator: Floci, LocalStack, AWS Emulator |
 | `PORT` | `4000` | HTTP port inside the container |
 | `SECRET_KEY_BASE` | random per boot | set it only when you run more than one replica |
@@ -27,6 +30,9 @@ or Node. To run your own changes, build the `Dockerfile` at the repository root 
 The viewer needs only `s3:ListBucket` and `s3:GetObject` on the state bucket. Secret values stay
 encrypted and show as `[secret]`. Tidewave is not in the image; it runs only with `mix phx.server`
 in dev (turn it off there with `TIDEWAVE=false`).
+
+Credential order: environment keys, then the credentials endpoint (when both of its variables are
+set), then `AWS_PROFILE`, then an instance role.
 
 For `cloudformation://`, the viewer needs only `cloudformation:ListStacks`, `DescribeStacks`,
 `ListStackResources`, `DescribeStackEvents` and `GetTemplate`.

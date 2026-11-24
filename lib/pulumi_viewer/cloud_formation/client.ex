@@ -83,15 +83,33 @@ defmodule PulumiViewer.CloudFormation.Client do
   defp attempt(src, action, params, n) do
     extra = Application.get_env(:pulumi_viewer, :cloudformation_aws_opts, [])
 
-    with {:ok, creds} <- AwsCredentials.opts(src[:profile]),
-         true <-
-           AwsCredentials.available?(src[:profile], extra) ||
-             {:error, Error.from(:no_credentials)} do
-      request(src, action, params, creds ++ extra, n)
+    case credentials(src[:profile]) do
+      {:ok, creds} ->
+        opts = creds ++ extra
+
+        if creds != [] or extra[:access_key_id] != nil or credential_source() != :none,
+          do: send_request(src, action, params, opts, n),
+          else: {:error, Error.from(:no_credentials, src[:profile])}
+
+      {:error, %Error{} = e} ->
+        {:error, e}
+
+      {:error, e} ->
+        {:error, Error.from(e, src[:profile])}
     end
   end
 
-  defp request(src, action, params, opts, n) do
+  # A source with `?profile=` uses only that profile (never another account's keys).
+  defp credentials(profile) when is_binary(profile), do: AwsCredentials.opts(profile)
+
+  defp credentials(nil) do
+    case env_credentials() do
+      {:error, _} = e -> e
+      creds -> {:ok, creds}
+    end
+  end
+
+  defp send_request(src, action, params, opts, n) do
     op = %ExAws.Operation.Query{
       path: "/",
       service: :cloudformation,
@@ -99,7 +117,7 @@ defmodule PulumiViewer.CloudFormation.Client do
       params: Map.merge(params, %{"Action" => action, "Version" => "2010-05-15"})
     }
 
-    case ExAws.request(
+    case request(
            op,
            Keyword.merge([region: src.region, retries: [max_attempts: 1]], Keyword.new(opts))
          ) do
@@ -112,18 +130,79 @@ defmodule PulumiViewer.CloudFormation.Client do
           Process.sleep(backoff(n))
           attempt(src, action, params, n + 1)
         else
-          {:error, Error.from(e)}
+          {:error, Error.from(e, src[:profile])}
         end
 
       {:error, e} ->
-        {:error, Error.from(e)}
+        {:error, Error.from(e, src[:profile])}
     end
+  end
+
+  # ExAws can raise or exit (for example in its AuthCache); keep it this source's error.
+  defp request(op, opts) do
+    ExAws.request(op, opts)
+  rescue
+    e -> {:error, {:raised, Exception.message(e)}}
+  catch
+    :exit, reason -> {:error, {:raised, inspect(reason)}}
   end
 
   defp body(%{body: b}), do: b
   defp body(b), do: b
 
   defp backoff(n), do: min(round(:math.pow(2, n) * 100) + :rand.uniform(100), 5_000)
+
+  @doc """
+  Where the credentials come from: keys in the environment, an `AWS_PROFILE` from the shared
+  config (also AWS SSO, refreshed from the token cache), a host credential helper
+  (`:container_full_uri`, refreshed before `Expiration`), an ECS container role, or none.
+  """
+  def credential_source do
+    cond do
+      present?("AWS_ACCESS_KEY_ID") ->
+        :env
+
+      PulumiViewer.HostCredentials.configured?() ->
+        :container_full_uri
+
+      present?("AWS_PROFILE") ->
+        {:profile, System.get_env("AWS_PROFILE")}
+
+      present?("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI") ->
+        :container
+
+      present?("AWS_CONTAINER_CREDENTIALS_FULL_URI") ->
+        :container
+
+      true ->
+        :none
+    end
+  end
+
+  defp present?(var), do: System.get_env(var) not in [nil, ""]
+
+  # Keys from the environment or a profile, without the instance-role fallback.
+  defp env_credentials do
+    case credential_source() do
+      :env ->
+        [
+          access_key_id: System.get_env("AWS_ACCESS_KEY_ID"),
+          secret_access_key: System.get_env("AWS_SECRET_ACCESS_KEY"),
+          security_token: System.get_env("AWS_SESSION_TOKEN")
+        ]
+
+      :container_full_uri ->
+        case PulumiViewer.HostCredentials.fetch() do
+          {:ok, keys} -> keys
+          error -> error
+        end
+
+      # config/runtime.exs reads AWS_PROFILE through ExAws's :awscli source (refreshed every 30 s);
+      # per-request overrides cannot carry it.
+      _ ->
+        []
+    end
+  end
 
   @doc false
   # Query API XML -> maps; an element whose children are all <member> becomes a list.
