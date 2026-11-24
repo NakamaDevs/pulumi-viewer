@@ -92,7 +92,13 @@ defmodule PulumiViewer.AwsCredentials do
     port =
       Port.open({:spawn_executable, exe}, [:binary, :exit_status, :stderr_to_stdout, args: args])
 
-    os_pid = Port.info(port, :os_pid) |> elem(1)
+    # nil when the CLI already exited and the port closed (a fast failure); nothing to kill then
+    os_pid =
+      case Port.info(port, :os_pid) do
+        {:os_pid, pid} -> pid
+        nil -> nil
+      end
+
     deadline = System.monotonic_time(:millisecond) + timeout
     collect(port, os_pid, deadline, [])
   end
@@ -114,7 +120,9 @@ defmodule PulumiViewer.AwsCredentials do
           ArgumentError -> :ok
         end
 
-        System.cmd("kill", ["-9", Integer.to_string(os_pid)], stderr_to_stdout: true)
+        if os_pid,
+          do: System.cmd("kill", ["-9", Integer.to_string(os_pid)], stderr_to_stdout: true)
+
         flush(port)
         :timeout
     end
