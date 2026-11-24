@@ -113,8 +113,11 @@ defmodule PulumiViewerWeb.StackLive do
     do: if(socket.assigns.prefs.view == "graph", do: "graph", else: "resources")
 
   @doc false
-  # the view option changed in the settings: follow it unless History is open
-  def prefs_changed(socket, prefs) do
+  # the view option changed in the settings: follow it unless History is open.
+  # Other options (density, orientation) leave the open view as it is.
+  def prefs_changed(socket, %{view: same}, %{view: same}), do: socket
+
+  def prefs_changed(socket, _old, prefs) do
     if socket.assigns[:tab] in ["graph", "resources"],
       do: assign(socket, tab: if(prefs.view == "graph", do: "graph", else: "resources")),
       else: socket

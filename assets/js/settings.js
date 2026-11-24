@@ -90,7 +90,9 @@ export const Splitter = {
       if (!grow && !shrink) return
       e.preventDefault()
       const cur = document.getElementById("details").getBoundingClientRect()[beside ? "width" : "height"]
-      this.size = Math.round(Math.max(200, cur + (grow ? 24 : -24)))
+      const rect = split.getBoundingClientRect()
+      const max = (beside ? rect.width : rect.height) - 160
+      this.size = Math.round(Math.max(200, Math.min(max, cur + (grow ? 24 : -24))))
       split.style.setProperty("--pv-split", this.size + "px")
       try { localStorage.setItem(key(), String(this.size)) } catch (_e) { /* not kept */ }
     })

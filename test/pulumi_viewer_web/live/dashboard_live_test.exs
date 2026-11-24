@@ -46,6 +46,33 @@ defmodule PulumiViewerWeb.DashboardLiveTest do
     assert has_element?(view, "#graph")
   end
 
+  test "a settings change keeps the open view unless the view option changes", %{conn: conn} do
+    {:ok, view, _} = live(conn, ~p"/stacks/demo/dev")
+    view |> element(~s|button[phx-value-tab="graph"]|) |> render_click()
+
+    render_hook(view, "prefs", %{
+      "view" => "table",
+      "density" => "comfortable",
+      "orientation" => "beside"
+    })
+
+    assert has_element?(view, "#graph")
+
+    render_hook(view, "prefs", %{
+      "view" => "graph",
+      "density" => "comfortable",
+      "orientation" => "beside"
+    })
+
+    render_hook(view, "prefs", %{
+      "view" => "table",
+      "density" => "comfortable",
+      "orientation" => "beside"
+    })
+
+    assert has_element?(view, "#resource-list")
+  end
+
   test "children sit under their parent and collapse", %{conn: conn} do
     {:ok, view, _} = live(conn, ~p"/stacks/demo/dev")
     assert has_element?(view, "#resource-list [data-urn='#{@bucket_urn}'][data-depth='1']")
