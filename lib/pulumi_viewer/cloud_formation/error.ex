@@ -41,13 +41,18 @@ defmodule PulumiViewer.CloudFormation.Error do
   end
 
   defp credentials(what, code \\ nil) do
-    %__MODULE__{
-      code: code,
-      message:
-        what <>
-          " Set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and AWS_SESSION_TOKEN, for example with " <>
-          "`eval \"$(aws configure export-credentials --profile <profile> --format env)\"`, then restart the viewer."
-    }
+    %__MODULE__{code: code, message: what <> " " <> credentials_hint(System.get_env("AWS_PROFILE"))}
+  end
+
+  @doc false
+  def credentials_hint(profile) when profile in [nil, ""] do
+    "Set AWS_PROFILE (with ~/.aws mounted), or AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and " <>
+      "AWS_SESSION_TOKEN, for example with " <>
+      "`eval \"$(aws configure export-credentials --profile <profile> --format env)\"`, then restart the viewer."
+  end
+
+  def credentials_hint(profile) do
+    "Run `aws sso login --profile #{profile}` on the host, then reload this page."
   end
 
   def code(body) when is_binary(body), do: xml_value(body, "Code")

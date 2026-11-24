@@ -47,6 +47,8 @@ defmodule PulumiViewer.MixProject do
       {:hackney, "~> 4.0"},
       {:ex_aws_s3, "~> 2.0"},
       {:ex_aws, "~> 2.0"},
+      # Lets ExAws read ~/.aws/config profiles, including AWS SSO.
+      {:configparser_ex, "~> 5.0"},
       {:tidewave, "~> 0.9", only: [:dev]},
       {:ash_phoenix, "~> 2.0"},
       {:ash, "~> 3.0"},

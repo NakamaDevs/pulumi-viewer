@@ -117,26 +117,41 @@ defmodule PulumiViewer.CloudFormation.Client do
 
   defp backoff(n), do: min(round(:math.pow(2, n) * 100) + :rand.uniform(100), 5_000)
 
-  # Keys from the environment, without the instance-role fallback for a missing session token.
-  defp env_credentials do
-    case System.get_env("AWS_ACCESS_KEY_ID") do
-      k when k in [nil, ""] ->
-        []
-
-      key ->
-        [
-          access_key_id: key,
-          secret_access_key: System.get_env("AWS_SECRET_ACCESS_KEY"),
-          security_token: System.get_env("AWS_SESSION_TOKEN")
-        ]
+  @doc """
+  Where the credentials come from: keys in the environment, an `AWS_PROFILE` from the shared
+  config (also AWS SSO, refreshed from the token cache), an ECS container role, or none.
+  """
+  def credential_source do
+    cond do
+      present?("AWS_ACCESS_KEY_ID") -> :env
+      present?("AWS_PROFILE") -> {:profile, System.get_env("AWS_PROFILE")}
+      present?("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI") -> :container
+      present?("AWS_CONTAINER_CREDENTIALS_FULL_URI") -> :container
+      true -> :none
     end
   end
 
-  # Explicit keys, a session from the environment, or an ECS task role.
+  defp present?(var), do: System.get_env(var) not in [nil, ""]
+
+  # Keys from the environment or a profile, without the instance-role fallback.
+  defp env_credentials do
+    case credential_source() do
+      :env ->
+        [
+          access_key_id: System.get_env("AWS_ACCESS_KEY_ID"),
+          secret_access_key: System.get_env("AWS_SECRET_ACCESS_KEY"),
+          security_token: System.get_env("AWS_SESSION_TOKEN")
+        ]
+
+      # config/runtime.exs reads AWS_PROFILE through ExAws's :awscli source (refreshed every 30 s);
+      # per-request overrides cannot carry it.
+      _ ->
+        []
+    end
+  end
+
   defp credentials?(opts) do
-    opts[:access_key_id] != nil or System.get_env("AWS_ACCESS_KEY_ID") not in [nil, ""] or
-      System.get_env("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI") != nil or
-      System.get_env("AWS_CONTAINER_CREDENTIALS_FULL_URI") != nil
+    opts[:access_key_id] != nil or credential_source() != :none
   end
 
   @doc false

@@ -15,11 +15,19 @@ cond do
     :ok
 end
 
+# Keys in the environment first; then AWS_PROFILE from ~/.aws (also AWS SSO, refreshed every 30 s);
+# then an instance role.
+aws_profile =
+  case System.get_env("AWS_PROFILE") do
+    p when p in [nil, ""] -> []
+    p -> [{:awscli, p, 30}]
+  end
+
 config :ex_aws,
   region: System.get_env("AWS_REGION", "us-east-1"),
-  access_key_id: [{:system, "AWS_ACCESS_KEY_ID"}, :instance_role],
-  secret_access_key: [{:system, "AWS_SECRET_ACCESS_KEY"}, :instance_role],
-  security_token: [{:system, "AWS_SESSION_TOKEN"}, :instance_role]
+  access_key_id: [{:system, "AWS_ACCESS_KEY_ID"}] ++ aws_profile ++ [:instance_role],
+  secret_access_key: [{:system, "AWS_SECRET_ACCESS_KEY"}] ++ aws_profile ++ [:instance_role],
+  security_token: [{:system, "AWS_SESSION_TOKEN"}] ++ aws_profile ++ [:instance_role]
 
 # config/runtime.exs is executed for all environments, including
 # during releases. It is executed after compilation and before the
