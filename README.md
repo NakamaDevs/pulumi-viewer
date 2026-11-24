@@ -66,6 +66,22 @@ The backend URL uses the same form as `pulumi login`. The viewer only lists and 
 | `.pulumi/stacks/<stack>.json[.gz]` | legacy (non project-scoped) stacks |
 | `.pulumi/history/<project>/<stack>/*.history.json` | update history |
 
+### Several sources at the same time
+
+Set `PULUMI_BACKEND_URLS` to a comma-separated list of `name=url`. The home page loads all of
+them in parallel and groups the stacks by source. A source that fails (for example, expired
+credentials) shows its own error, and the others still load.
+
+```sh
+PULUMI_BACKEND_URLS="dev=cloudformation://us-east-1?profile=dev-readonly,prod=cloudformation://us-east-1?profile=prod-readonly,shared=s3://pulumi-state/shared?profile=shared-readonly"
+```
+
+Each AWS source can use its own profile with `?profile=<name>`. When the `aws` CLI is installed,
+the viewer gets the credentials with `aws configure export-credentials`, so every profile type
+works (keys, SSO, `aws login`, assumed roles). Without the CLI (for example in the Docker image),
+ExAws reads `~/.aws` itself (keys and SSO only). A source without a profile uses the `AWS_*`
+environment variables. A single `PULUMI_BACKEND_URL` still works and is one source.
+
 ### CloudFormation source
 
 Infrastructure in CloudFormation, not Pulumi? Set

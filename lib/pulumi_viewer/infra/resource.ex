@@ -4,6 +4,7 @@ defmodule PulumiViewer.Infra.Resource do
   actions do
     read :for_stack do
       argument :project, :string
+      argument :source, :string
       argument :stack, :string, allow_nil?: false
       manual PulumiViewer.Infra.Resource.Read
     end
@@ -32,7 +33,12 @@ defmodule PulumiViewer.Infra.Resource.Read do
 
   @impl true
   def read(query, _dlq, _opts, _ctx) do
-    with {:ok, cp} <- State.checkpoint(query.arguments[:project], query.arguments.stack) do
+    with {:ok, cp} <-
+           State.checkpoint(
+             query.arguments[:source],
+             query.arguments[:project],
+             query.arguments.stack
+           ) do
       {:ok, Enum.map(cp.resources, &struct(Resource, wrap(&1)))}
     end
   end

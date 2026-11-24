@@ -5,13 +5,13 @@ defmodule PulumiViewer.Storage.S3 do
   def list(%{bucket: bucket} = cfg, prefix) do
     bucket
     |> ExAws.S3.list_objects_v2(prefix: full(cfg, prefix))
-    |> ExAws.stream!(aws_opts())
+    |> ExAws.stream!(aws_opts(cfg))
     |> Enum.map(&strip(cfg, &1.key))
   end
 
   @impl true
   def read(%{bucket: bucket} = cfg, key) do
-    case ExAws.S3.get_object(bucket, full(cfg, key)) |> ExAws.request(aws_opts()) do
+    case ExAws.S3.get_object(bucket, full(cfg, key)) |> ExAws.request(aws_opts(cfg)) do
       {:ok, %{body: body}} -> {:ok, body}
       {:error, e} -> {:error, e}
     end
@@ -24,7 +24,16 @@ defmodule PulumiViewer.Storage.S3 do
   defp strip(%{prefix: p}, key), do: String.replace_prefix(key, p <> "/", "")
 
   # Honour AWS_ENDPOINT_URL so the same code reads Floci, LocalStack or the AWS Emulator.
-  defp aws_opts do
+  # Never fall back to other credentials when the source's profile fails: that would read
+  # this source with another account's keys. The source shows the profile error instead.
+  defp aws_opts(cfg) do
+    case PulumiViewer.AwsCredentials.opts(cfg[:profile]) do
+      {:ok, creds} -> creds ++ endpoint_opts()
+      {:error, e} -> raise e
+    end
+  end
+
+  defp endpoint_opts do
     case System.get_env("AWS_ENDPOINT_URL_S3") || System.get_env("AWS_ENDPOINT_URL") do
       nil ->
         []

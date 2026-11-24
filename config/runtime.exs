@@ -2,6 +2,11 @@ import Config
 
 # Pulumi backend to read, same form as `pulumi login`: s3://bucket[/prefix] or file://dir.
 # For an AWS emulator (Floci, AWS Emulator) also set AWS_ENDPOINT_URL.
+# Several sources at the same time: PULUMI_BACKEND_URLS="dev=cloudformation://us-east-1,prod=s3://state".
+if urls = System.get_env("PULUMI_BACKEND_URLS") do
+  config :pulumi_viewer, backend_urls: urls
+end
+
 cond do
   url = System.get_env("PULUMI_BACKEND_URL") ->
     config :pulumi_viewer, backend_url: url

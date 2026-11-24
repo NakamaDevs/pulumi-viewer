@@ -4,15 +4,16 @@ defmodule PulumiViewerWeb.StackLive do
   alias PulumiViewer.Pulumi.Graph
 
   @impl true
-  def mount(%{"project" => project, "stack" => stack}, _session, socket) do
+  def mount(%{"project" => project, "stack" => stack} = params, _session, socket) do
+    source = params["source"]
     project = if project == "_", do: nil, else: project
 
     socket =
       socket
-      |> assign(project: project, stack: stack, page_title: "#{project}/#{stack}")
+      |> assign(project: project, stack: stack, source: source, page_title: "#{project}/#{stack}")
       |> assign(tab: "graph", q: "", selected: nil, providers: false, updates: nil)
 
-    case Infra.list_resources(project, stack) do
+    case Infra.list_resources(project, stack, source) do
       {:ok, resources} -> {:ok, socket |> assign(resources: resources, missing: false) |> graph()}
       {:error, e} -> {:ok, assign(socket, resources: [], missing: problem(e), graph_json: "{}")}
     end
@@ -21,7 +22,8 @@ defmodule PulumiViewerWeb.StackLive do
   @impl true
   def handle_event("tab", %{"tab" => "history"}, socket) do
     updates =
-      socket.assigns.updates || Infra.list_updates!(socket.assigns.project, socket.assigns.stack)
+      socket.assigns.updates ||
+        Infra.list_updates!(socket.assigns.project, socket.assigns.stack, socket.assigns.source)
 
     {:noreply, assign(socket, tab: "history", updates: updates)}
   end
@@ -89,6 +91,7 @@ defmodule PulumiViewerWeb.StackLive do
       <div class="breadcrumbs text-sm">
         <ul>
           <li><.link navigate={~p"/"}>Stacks</.link></li>
+          <li :if={@source}>{@source}</li>
           <li>{@project || "(no project)"}</li>
           <li class="font-semibold">{@stack}</li>
         </ul>

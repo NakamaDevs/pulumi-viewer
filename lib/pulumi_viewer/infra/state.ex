@@ -3,42 +3,53 @@ defmodule PulumiViewer.Infra.State do
   alias PulumiViewer.{CloudFormation, Storage}
   alias PulumiViewer.Pulumi.{Checkpoint, History, Layout}
 
-  def stacks do
-    case Storage.current() do
-      {CloudFormation, cfg} -> CloudFormation.stacks(cfg)
-      _ -> {:ok, Storage.list(".pulumi/stacks/") |> Layout.stacks()}
+  # Every function takes a source name; nil means the first source.
+  def stacks(source_name) do
+    case Storage.source(source_name) do
+      nil -> {:error, :unknown_source}
+      %{error: why} when is_binary(why) -> {:error, %CloudFormation.Error{message: why}}
+      %{mod: CloudFormation, cfg: cfg} -> CloudFormation.stacks(cfg)
+      src -> {:ok, Storage.list(src, ".pulumi/stacks/") |> Layout.stacks()}
     end
   end
 
-  def checkpoint(project, stack) do
-    case Storage.current() do
-      {CloudFormation, cfg} ->
+  def checkpoint(source_name, project, stack) do
+    case Storage.source(source_name) do
+      nil ->
+        {:error, :not_found}
+
+      %{error: why} when is_binary(why) ->
+        {:error, %CloudFormation.Error{message: why}}
+
+      %{mod: CloudFormation, cfg: cfg} ->
         CloudFormation.checkpoint(cfg, stack)
 
-      _ ->
-        {:ok, stacks} = stacks()
+      src ->
+        {:ok, stacks} = stacks(source_name)
 
         case Enum.find(stacks, &(&1.project == blank(project) and &1.stack == stack)) do
           nil -> {:error, :not_found}
-          %{key: key} -> with {:ok, body} <- Storage.read(key), do: Checkpoint.parse(body)
+          %{key: key} -> with {:ok, body} <- Storage.read(src, key), do: Checkpoint.parse(body)
         end
     end
   end
 
-  def updates(project, stack, limit \\ 50) do
-    case Storage.current() do
-      {CloudFormation, cfg} -> CloudFormation.updates(cfg, stack, limit)
-      _ -> pulumi_updates(project, stack, limit)
+  def updates(source_name, project, stack, limit \\ 50) do
+    case Storage.source(source_name) do
+      nil -> []
+      %{error: why} when is_binary(why) -> []
+      %{mod: CloudFormation, cfg: cfg} -> CloudFormation.updates(cfg, stack, limit)
+      src -> pulumi_updates(src, project, stack, limit)
     end
   end
 
-  defp pulumi_updates(project, stack, limit) do
+  defp pulumi_updates(src, project, stack, limit) do
     Layout.history_prefix(blank(project), stack)
-    |> Storage.list()
+    |> then(&Storage.list(src, &1))
     |> Layout.history_keys()
     |> Enum.take(limit)
     |> Enum.flat_map(fn key ->
-      with {:ok, body} <- Storage.read(key),
+      with {:ok, body} <- Storage.read(src, key),
            {:ok, u} <- History.parse(body),
            do: [u],
            else: (_ -> [])

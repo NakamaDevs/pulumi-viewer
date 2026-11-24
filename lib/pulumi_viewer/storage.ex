@@ -1,11 +1,13 @@
 defmodule PulumiViewer.Storage do
   @moduledoc """
-  Read-only access to a Pulumi DIY backend. The URL uses the same form as
-  `pulumi login`: `file://<dir>` or `s3://<bucket>[/<prefix>]`. For an AWS
+  The sources the viewer reads. A source is a Pulumi DIY backend, in the same form as
+  `pulumi login` (`file://<dir>` or `s3://<bucket>[/<prefix>]`), or live CloudFormation stacks
+  (`cloudformation://<region>[?prefix=<p>]`, see `PulumiViewer.CloudFormation`). For an AWS
   emulator (Floci, LocalStack, AWS Emulator) set `AWS_ENDPOINT_URL`.
 
-  `cloudformation://<region>[?prefix=<p>]` is not a Pulumi backend: it reads live
-  CloudFormation stacks instead (see `PulumiViewer.CloudFormation`).
+  Several sources load at the same time: `PULUMI_BACKEND_URLS="dev=cloudformation://us-east-1,
+  prod=s3://state-prod"`. Each AWS source can name its own profile with `?profile=<name>`.
+  A single `PULUMI_BACKEND_URL` is one source named `default`.
   """
 
   @callback list(config :: term, prefix :: String.t()) :: [String.t()]
@@ -15,23 +17,106 @@ defmodule PulumiViewer.Storage do
     do: {PulumiViewer.Storage.Local, Path.expand(path) |> relative(path)}
 
   def parse_url("s3://" <> rest) do
-    [bucket | prefix] = rest |> String.split("?") |> hd() |> String.split("/", parts: 2)
-    {PulumiViewer.Storage.S3, %{bucket: bucket, prefix: prefix |> List.first() |> blank()}}
+    {path, query} = split_query(rest)
+    [bucket | prefix] = String.split(path, "/", parts: 2)
+
+    {PulumiViewer.Storage.S3,
+     %{
+       bucket: bucket,
+       prefix: prefix |> List.first() |> blank(),
+       profile: blank(query["profile"])
+     }}
   end
 
   def parse_url("cloudformation://" <> rest),
     do: {PulumiViewer.CloudFormation, PulumiViewer.CloudFormation.parse_url(rest)}
 
-  def current, do: parse_url(Application.fetch_env!(:pulumi_viewer, :backend_url))
+  def parse_url(url),
+    do: {:error, "unsupported source URL #{url}: use file://, s3:// or cloudformation://"}
 
-  def list(prefix) do
-    {mod, cfg} = current()
-    mod.list(cfg, prefix)
+  @doc """
+  All sources, in the configured order: `[%{name, url, mod, cfg, error}]`. A bad URL or a
+  duplicate name is an `error` of that source only, so the other sources still load.
+  """
+  def sources do
+    {list, _seen} =
+      Enum.map_reduce(named_urls(), MapSet.new(), fn {name, url}, seen ->
+        src =
+          cond do
+            MapSet.member?(seen, name) ->
+              %{name: name, url: url, mod: nil, cfg: nil, error: "duplicate source name #{name}"}
+
+            true ->
+              case parse_url(url) do
+                {:error, why} ->
+                  %{name: name, url: url, mod: nil, cfg: nil, error: why}
+
+                {mod, cfg} ->
+                  %{name: name, url: url, mod: mod, cfg: with_name(cfg, name), error: nil}
+              end
+          end
+
+        {src, MapSet.put(seen, name)}
+      end)
+
+    list
   end
 
-  def read(key) do
-    {mod, cfg} = current()
-    mod.read(cfg, key)
+  @doc "The source with this name; the first source when the name is nil or empty."
+  def source(name) when name in [nil, ""], do: hd(sources())
+
+  def source(name),
+    do:
+      Enum.find(sources(), &(&1.name == name and &1.error == nil)) ||
+        Enum.find(sources(), &(&1.name == name))
+
+  def list(%{mod: mod, cfg: cfg}, prefix), do: mod.list(cfg, prefix)
+  def read(%{mod: mod, cfg: cfg}, key), do: mod.read(cfg, key)
+
+  defp named_urls do
+    entries =
+      case Application.get_env(:pulumi_viewer, :backend_urls) do
+        list when is_binary(list) -> split_entries(list)
+        _ -> []
+      end
+
+    case entries do
+      [_ | _] ->
+        entries
+        |> Enum.with_index(1)
+        |> Enum.map(fn {entry, i} ->
+          case String.split(entry, "=", parts: 2) do
+            [name, url] ->
+              if String.contains?(name, "://"), do: {"source#{i}", entry}, else: {name, url}
+
+            [url] ->
+              {"source#{i}", url}
+          end
+        end)
+
+      [] ->
+        [{"default", Application.fetch_env!(:pulumi_viewer, :backend_url)}]
+    end
+  end
+
+  # Split only at a comma that starts a new `[name=]scheme://` entry, so a comma inside a
+  # query value (`?prefix=a,b`) stays in its URL.
+  defp split_entries(list) do
+    list
+    |> String.split(~r/,(?=\s*(?:[^,=\s]+=)?[a-z][a-z0-9+.-]*:\/\/)/i)
+    |> Enum.map(&(&1 |> String.trim() |> String.trim(",") |> String.trim()))
+    |> Enum.reject(&(&1 == ""))
+  end
+
+  # the name keys the cache and the credentials of AWS sources; a file source is just a path
+  defp with_name(cfg, name) when is_map(cfg), do: Map.put(cfg, :name, name)
+  defp with_name(cfg, _name), do: cfg
+
+  defp split_query(rest) do
+    case String.split(rest, "?", parts: 2) do
+      [path, q] -> {path, URI.decode_query(q)}
+      [path] -> {path, %{}}
+    end
   end
 
   # keep relative paths relative so tests and `file://.` behave like the Pulumi CLI
