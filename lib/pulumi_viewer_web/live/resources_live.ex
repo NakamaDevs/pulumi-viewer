@@ -231,7 +231,7 @@ defmodule PulumiViewerWeb.ResourcesLive do
                   <span class="flex-1"></span>
                   <span :if={match?({:ok, _}, res)} class="pv-count">{elem(res, 1) |> length()}</span>
                 </div>
-                <div :if={key not in @collapsed}>
+                <div :if={key not in @collapsed or @q != ""}>
                   <%= case res do %>
                     <% {:ok, rows} -> %>
                       <.resource_rows

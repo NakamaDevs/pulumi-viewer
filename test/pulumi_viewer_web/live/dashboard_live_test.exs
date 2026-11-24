@@ -122,6 +122,15 @@ defmodule PulumiViewerWeb.DashboardLiveTest do
     assert has_element?(view, "#details [data-section='resource']", "pulumi:pulumi:Stack")
   end
 
+  test "a search shows matches inside a collapsed stack group", %{conn: conn} do
+    {:ok, view, _} = live(conn, ~p"/resources")
+    render_async(view)
+    view |> element("[data-stack-group='default/demo/dev'] > .pv-row") |> render_click()
+    refute has_element?(view, "#resource-list [data-urn='#{@bucket_urn}']")
+    view |> form("#resource-filter", %{q: "bucketV2"}) |> render_change()
+    assert has_element?(view, "#resource-list [data-urn='#{@bucket_urn}']")
+  end
+
   test "history page lists updates of all stacks and opens one", %{conn: conn} do
     {:ok, view, _} = live(conn, ~p"/history")
     html = render_async(view)

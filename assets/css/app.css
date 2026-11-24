@@ -174,8 +174,8 @@ html, body { background: var(--color-base-200); color: var(--color-base-content)
 #split[data-orientation=beside] { flex-direction: row; }
 #split[data-orientation=below] { flex-direction: column; }
 #split > .pv-master { flex: 1 1 auto; min-width: 0; min-height: 0; overflow: auto; }
-#split[data-orientation=beside] > #details { flex: 0 0 var(--pv-split, 46%); min-width: 320px; }
-#split[data-orientation=below] > #details { flex: 0 0 var(--pv-split, 45%); min-height: 200px; }
+#split[data-orientation=beside] > #details { flex: 0 0 var(--pv-split, 46%); min-width: 320px; max-width: calc(100% - 160px); }
+#split[data-orientation=below] > #details { flex: 0 0 var(--pv-split, 45%); min-height: 200px; max-height: calc(100% - 160px); }
 .pv-splitter { flex: 0 0 6px; background: transparent; }
 .pv-splitter:hover, .pv-splitter.dragging { background: var(--color-primary); opacity: .5; }
 #split[data-orientation=beside] .pv-splitter { cursor: col-resize; }

@@ -54,8 +54,10 @@ export const Splitter = {
     const key = () => `pv:split:${split.dataset.orientation}`
     const restore = () => {
       try {
-        const v = localStorage.getItem(key())
-        if (v) split.style.setProperty("--pv-split", v + "px")
+        const v = Number(localStorage.getItem(key()))
+        const r = split.getBoundingClientRect()
+        const max = (split.dataset.orientation === "beside" ? r.width : r.height) - 160
+        if (v > 0) split.style.setProperty("--pv-split", Math.max(200, Math.min(max, v)) + "px")
         else split.style.removeProperty("--pv-split")
       } catch (_e) { /* default size */ }
     }
