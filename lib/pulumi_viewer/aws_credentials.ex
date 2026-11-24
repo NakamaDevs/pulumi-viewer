@@ -107,7 +107,13 @@ defmodule PulumiViewer.AwsCredentials do
       left ->
         # Close first, while the port is surely open (after the kill the runtime can close it
         # first, and Port.close would raise); then stop the OS process and drop late messages.
-        Port.close(port)
+        # the CLI can still exit on its own at the deadline and close the port first
+        try do
+          Port.close(port)
+        rescue
+          ArgumentError -> :ok
+        end
+
         System.cmd("kill", ["-9", Integer.to_string(os_pid)], stderr_to_stdout: true)
         flush(port)
         :timeout
