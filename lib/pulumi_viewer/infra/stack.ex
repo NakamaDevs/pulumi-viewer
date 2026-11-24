@@ -1,15 +1,21 @@
 defmodule PulumiViewer.Infra.Stack do
-  use Ash.Resource, domain: PulumiViewer.Infra, data_layer: Ash.DataLayer.Simple
+  use Ash.Resource,
+    domain: PulumiViewer.Infra,
+    data_layer: Ash.DataLayer.Simple,
+    # the optional source argument picks one of the configured sources
+    primary_read_warning?: false
 
   actions do
     read :read do
       primary? true
+      argument :source, :string
       manual PulumiViewer.Infra.Stack.Read
     end
   end
 
   attributes do
     attribute :key, :string, primary_key?: true, allow_nil?: false, public?: true
+    attribute :source, :string, public?: true
     attribute :project, :string, public?: true
     attribute :name, :string, public?: true
     attribute :resource_count, :integer, public?: true
@@ -23,22 +29,25 @@ defmodule PulumiViewer.Infra.Stack.Read do
   alias PulumiViewer.Infra.{Stack, State}
 
   @impl true
-  def read(_query, _data_layer_query, _opts, _context) do
-    with {:ok, stacks} <- State.stacks() do
-      read_all(stacks)
+  def read(query, _data_layer_query, _opts, _context) do
+    source = PulumiViewer.Storage.source(query.arguments[:source])
+
+    with true <- source != nil || {:error, :unknown_source},
+         {:ok, stacks} <- State.stacks(source.name) do
+      read_all(source.name, stacks)
     end
   end
 
-  defp read_all(stacks) do
+  defp read_all(source, stacks) do
     stacks =
       stacks
       |> Task.async_stream(
         fn s ->
-          case State.checkpoint(s.project, s.stack) do
-            {:ok, cp} -> {:ok, stack(s, cp)}
+          case State.checkpoint(source, s.project, s.stack) do
+            {:ok, cp} -> {:ok, stack(source, s, cp)}
             # a source error (credentials, access) is shown instead of an empty list
             {:error, %PulumiViewer.CloudFormation.Error{} = e} -> {:error, e}
-            _ -> {:ok, stack(s, %{resources: [], updated_at: nil, pulumi_version: nil})}
+            _ -> {:ok, stack(source, s, %{resources: [], updated_at: nil, pulumi_version: nil})}
           end
         end,
         max_concurrency: 8,
@@ -52,9 +61,10 @@ defmodule PulumiViewer.Infra.Stack.Read do
     end
   end
 
-  defp stack(s, cp) do
+  defp stack(source, s, cp) do
     %Stack{
-      key: s.key,
+      key: source <> "/" <> s.key,
+      source: source,
       project: s.project,
       name: s.stack,
       resource_count: length(cp.resources),

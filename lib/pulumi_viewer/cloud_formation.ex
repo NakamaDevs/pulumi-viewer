@@ -16,20 +16,20 @@ defmodule PulumiViewer.CloudFormation do
   def parse_url(rest) do
     uri = URI.parse("cloudformation://" <> rest)
     query = URI.decode_query(uri.query || "")
-    %{region: uri.host, prefix: blank(query["prefix"])}
+    %{region: uri.host, prefix: blank(query["prefix"]), profile: blank(query["profile"])}
   end
 
-  def stacks(%{region: region, prefix: prefix}) do
-    with {:ok, summaries} <- Client.list_stacks(region),
+  def stacks(%{prefix: prefix} = cfg) do
+    with {:ok, summaries} <- Client.list_stacks(cfg),
          do: {:ok, Mapping.stacks(summaries, prefix)}
   end
 
   def checkpoint(cfg, stack) do
     with {:ok, stacks} <- stacks(cfg),
          true <- Enum.any?(stacks, &(&1.stack == stack)) || {:error, :not_found},
-         {:ok, desc} <- Client.describe_stack(cfg.region, stack),
-         {:ok, resources} <- Client.list_stack_resources(cfg.region, stack),
-         {:ok, body} <- Client.get_template(cfg.region, stack) do
+         {:ok, desc} <- Client.describe_stack(cfg, stack),
+         {:ok, resources} <- Client.list_stack_resources(cfg, stack),
+         {:ok, body} <- Client.get_template(cfg, stack) do
       template =
         case Template.parse(body) do
           {:ok, t} -> t
@@ -41,7 +41,7 @@ defmodule PulumiViewer.CloudFormation do
   end
 
   def updates(cfg, stack, limit) do
-    case Client.describe_stack_events(cfg.region, stack) do
+    case Client.describe_stack_events(cfg, stack) do
       {:ok, events} -> events |> Mapping.updates() |> Enum.take(limit)
       _ -> []
     end

@@ -4,15 +4,15 @@ defmodule PulumiViewer.Infra do
 
   resources do
     resource PulumiViewer.Infra.Stack do
-      define :list_stacks, action: :read
+      define :list_stacks, action: :read, args: [{:optional, :source}]
     end
 
     resource PulumiViewer.Infra.Resource do
-      define :list_resources, action: :for_stack, args: [:project, :stack]
+      define :list_resources, action: :for_stack, args: [:project, :stack, {:optional, :source}]
     end
 
     resource PulumiViewer.Infra.Update do
-      define :list_updates, action: :for_stack, args: [:project, :stack]
+      define :list_updates, action: :for_stack, args: [:project, :stack, {:optional, :source}]
     end
   end
 end

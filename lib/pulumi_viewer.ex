@@ -26,7 +26,11 @@ defmodule PulumiViewer do
 
   @doc "Backend URL plus the S3 endpoint when one is set, for the header."
   def backend_label do
-    url = Application.get_env(:pulumi_viewer, :backend_url, "")
+    url =
+      case PulumiViewer.Storage.sources() do
+        [one] -> one.url
+        many -> Enum.map_join(many, " · ", & &1.name)
+      end
 
     case System.get_env("AWS_ENDPOINT_URL_S3") || System.get_env("AWS_ENDPOINT_URL") do
       nil -> url
