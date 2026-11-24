@@ -154,11 +154,13 @@ defmodule PulumiViewer.AwsCredentials do
   end
 
   defp profile_error(profile, why) do
+    # source?: a source with `?profile=` reads nothing without it, so the whole source fails
     %Error{
       code: "ProfileCredentials",
+      source?: true,
       message:
         "AWS profile #{profile} has no valid credentials (#{why}). " <>
-          "Run `aws login --profile #{profile}` (or `aws sso login --profile #{profile}`), then press Refresh."
+          Error.profile_hint(profile)
     }
   end
 

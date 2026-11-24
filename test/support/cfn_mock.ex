@@ -4,9 +4,25 @@ defmodule PulumiViewer.CfnMock do
 
   @ns ~s(xmlns="http://cloudformation.amazonaws.com/doc/2010-05-15/")
 
+  defp access_key(headers) do
+    auth =
+      Enum.find_value(headers, "", fn {k, v} -> String.downcase(k) == "authorization" && v end)
+
+    case Regex.run(~r/Credential=([^\/]+)\//, auth) do
+      [_, key] -> key
+      _ -> nil
+    end
+  end
+
   @impl true
-  def request(:post, _url, body, _headers, _opts) do
+  def request(:post, _url, body, headers, _opts) do
     params = URI.decode_query(body)
+
+    # a test can ask to see which access key signed each call
+    case :persistent_term.get({__MODULE__, :report_to}, nil) do
+      nil -> :ok
+      pid -> send(pid, {:cfn_key, access_key(headers), params["Action"]})
+    end
 
     case :persistent_term.get({__MODULE__, :calls}, nil) do
       nil -> :ok

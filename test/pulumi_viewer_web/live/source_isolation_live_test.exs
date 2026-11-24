@@ -68,4 +68,13 @@ defmodule PulumiViewerWeb.SourceIsolationLiveTest do
     Application.put_env(:pulumi_viewer, :sources, "nope")
     assert_raise ArgumentError, fn -> PulumiViewer.Sources.validate!() end
   end
+
+  test "no sources at all is rejected by the startup check" do
+    url = Application.get_env(:pulumi_viewer, :backend_url)
+    on_exit(fn -> Application.put_env(:pulumi_viewer, :backend_url, url) end)
+    Application.put_env(:pulumi_viewer, :sources, ";")
+    Application.delete_env(:pulumi_viewer, :backend_url)
+    assert_raise ArgumentError, ~r/no sources/i, fn -> PulumiViewer.Sources.validate!() end
+    assert {:error, :unknown_source} = PulumiViewer.Sources.fetch(nil)
+  end
 end

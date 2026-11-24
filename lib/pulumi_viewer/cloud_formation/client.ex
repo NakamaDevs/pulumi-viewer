@@ -89,13 +89,13 @@ defmodule PulumiViewer.CloudFormation.Client do
 
         if creds != [] or extra[:access_key_id] != nil or credential_source() != :none,
           do: send_request(src, action, params, opts, n),
-          else: {:error, Error.from(:no_credentials)}
+          else: {:error, Error.from(:no_credentials, src[:profile])}
 
       {:error, %Error{} = e} ->
         {:error, e}
 
       {:error, e} ->
-        {:error, Error.from(e)}
+        {:error, Error.from(e, src[:profile])}
     end
   end
 
@@ -130,11 +130,11 @@ defmodule PulumiViewer.CloudFormation.Client do
           Process.sleep(backoff(n))
           attempt(src, action, params, n + 1)
         else
-          {:error, Error.from(e)}
+          {:error, Error.from(e, src[:profile])}
         end
 
       {:error, e} ->
-        {:error, Error.from(e)}
+        {:error, Error.from(e, src[:profile])}
     end
   end
 

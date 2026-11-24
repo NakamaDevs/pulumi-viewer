@@ -17,9 +17,32 @@ defmodule PulumiViewer.SourcesTest do
              Sources.parse("\n a = s3://b/p \n\nc=file://x\n")
   end
 
-  test "an entry without a name, or a duplicate name, is an error" do
-    assert_raise ArgumentError, ~r/name=url/, fn -> Sources.parse("file://x") end
+  test "a malformed entry, or a duplicate name, is an error" do
+    assert_raise ArgumentError, ~r/name=url/, fn -> Sources.parse("nope") end
+    assert_raise ArgumentError, ~r/name=url/, fn -> Sources.parse("=file://x") end
     assert_raise ArgumentError, ~r/twice/, fn -> Sources.parse("a=file://x;a=file://y") end
+  end
+
+  test "a bare URL (the old PULUMI_BACKEND_URLS form) is named source<i>" do
+    assert [
+             %{name: "source1", url: "s3://a?profile=p", kind: :pulumi},
+             %{name: "b", url: "file://x"},
+             %{name: "source3", url: "cloudformation://us-east-1", kind: :cloudformation}
+           ] = Sources.parse("s3://a?profile=p, b=file://x,cloudformation://us-east-1")
+  end
+
+  test "stray commas and spaces around an entry are trimmed" do
+    assert [%{name: "a", url: "s3://bucket"}] = Sources.parse("a=s3://bucket,")
+
+    assert [%{name: "a", url: "s3://bucket"}, %{name: "b", url: "file://x"}] =
+             Sources.parse(" ,a=s3://bucket , ;, b=file://x ,,")
+  end
+
+  test "an empty list falls back to PULUMI_BACKEND_URL" do
+    assert [%{name: "default", url: "file://x"}] = Sources.resolve(";", "file://x")
+    assert [%{name: "default", url: "file://x"}] = Sources.resolve(",", "file://x")
+    assert [%{name: "default", url: "file://x"}] = Sources.resolve(" , ; ", "file://x")
+    assert [] = Sources.resolve(";", nil)
   end
 
   test "an unknown scheme is an error" do

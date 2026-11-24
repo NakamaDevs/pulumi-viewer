@@ -6,7 +6,6 @@ defmodule PulumiViewer.Infra.Update do
       argument :project, :string
       argument :source, :string
       argument :stack, :string, allow_nil?: false
-      argument :source, :string
       manual PulumiViewer.Infra.Update.Read
     end
   end
