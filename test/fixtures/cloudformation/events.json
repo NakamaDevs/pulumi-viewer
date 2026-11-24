@@ -1,0 +1,11 @@
+[
+ {"EventId":"9","StackName":"web","LogicalResourceId":"web","ResourceType":"AWS::CloudFormation::Stack","ResourceStatus":"UPDATE_ROLLBACK_COMPLETE","Timestamp":"2026-11-02T10:05:00Z"},
+ {"EventId":"8","StackName":"web","LogicalResourceId":"Fn","ResourceType":"AWS::Lambda::Function","ResourceStatus":"UPDATE_FAILED","ResourceStatusReason":"Bad handler","Timestamp":"2026-11-02T10:01:00Z"},
+ {"EventId":"7","StackName":"web","LogicalResourceId":"web","ResourceType":"AWS::CloudFormation::Stack","ResourceStatus":"UPDATE_IN_PROGRESS","ResourceStatusReason":"User Initiated","Timestamp":"2026-11-02T10:00:00Z"},
+ {"EventId":"6","StackName":"web","LogicalResourceId":"web","ResourceType":"AWS::CloudFormation::Stack","ResourceStatus":"CREATE_COMPLETE","Timestamp":"2026-11-01T09:02:00Z"},
+ {"EventId":"5","StackName":"web","LogicalResourceId":"Fn","ResourceType":"AWS::Lambda::Function","ResourceStatus":"CREATE_COMPLETE","Timestamp":"2026-11-01T09:01:30Z"},
+ {"EventId":"4","StackName":"web","LogicalResourceId":"Fn","ResourceType":"AWS::Lambda::Function","ResourceStatus":"CREATE_IN_PROGRESS","Timestamp":"2026-11-01T09:01:00Z"},
+ {"EventId":"3","StackName":"web","LogicalResourceId":"Role","ResourceType":"AWS::IAM::Role","ResourceStatus":"CREATE_COMPLETE","Timestamp":"2026-11-01T09:00:40Z"},
+ {"EventId":"2","StackName":"web","LogicalResourceId":"Role","ResourceType":"AWS::IAM::Role","ResourceStatus":"CREATE_IN_PROGRESS","Timestamp":"2026-11-01T09:00:10Z"},
+ {"EventId":"1","StackName":"web","LogicalResourceId":"web","ResourceType":"AWS::CloudFormation::Stack","ResourceStatus":"CREATE_IN_PROGRESS","ResourceStatusReason":"User Initiated","Timestamp":"2026-11-01T09:00:00Z"}
+]

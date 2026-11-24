@@ -15,7 +15,7 @@ defmodule PulumiViewerWeb.StacksLive do
         assign(socket, stacks: Enum.group_by(stacks, &(&1.project || "(no project)")), error: nil)
 
       {:error, e} ->
-        assign(socket, stacks: %{}, error: Exception.message(e))
+        assign(socket, stacks: %{}, error: PulumiViewer.error_message(e))
     end
   end
 
@@ -32,7 +32,7 @@ defmodule PulumiViewerWeb.StacksLive do
 
       <div :if={@error} class="alert alert-error">{@error}</div>
       <p :if={!@error and @stacks == %{}} class="opacity-60">
-        No stacks found under <code>.pulumi/stacks/</code>.
+        No stacks found in <code>{PulumiViewer.backend_label()}</code>.
       </p>
 
       <section :for={{project, stacks} <- Enum.sort(@stacks)} class="space-y-2">

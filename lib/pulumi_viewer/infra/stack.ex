@@ -24,31 +24,42 @@ defmodule PulumiViewer.Infra.Stack.Read do
 
   @impl true
   def read(_query, _data_layer_query, _opts, _context) do
+    with {:ok, stacks} <- State.stacks() do
+      read_all(stacks)
+    end
+  end
+
+  defp read_all(stacks) do
     stacks =
-      State.stacks()
+      stacks
       |> Task.async_stream(
         fn s ->
-          cp =
-            case State.checkpoint(s.project, s.stack),
-              do: (
-                {:ok, cp} -> cp
-                _ -> %{resources: [], updated_at: nil, pulumi_version: nil}
-              )
-
-          %Stack{
-            key: s.key,
-            project: s.project,
-            name: s.stack,
-            resource_count: length(cp.resources),
-            updated_at: cp.updated_at,
-            pulumi_version: cp.pulumi_version
-          }
+          case State.checkpoint(s.project, s.stack) do
+            {:ok, cp} -> {:ok, stack(s, cp)}
+            # a source error (credentials, access) is shown instead of an empty list
+            {:error, %PulumiViewer.CloudFormation.Error{} = e} -> {:error, e}
+            _ -> {:ok, stack(s, %{resources: [], updated_at: nil, pulumi_version: nil})}
+          end
         end,
         max_concurrency: 8,
-        timeout: 30_000
+        timeout: 60_000
       )
-      |> Enum.map(fn {:ok, s} -> s end)
+      |> Enum.map(fn {:ok, r} -> r end)
 
-    {:ok, stacks}
+    case Enum.find(stacks, &match?({:error, _}, &1)) do
+      nil -> {:ok, Enum.map(stacks, &elem(&1, 1))}
+      error -> error
+    end
+  end
+
+  defp stack(s, cp) do
+    %Stack{
+      key: s.key,
+      project: s.project,
+      name: s.stack,
+      resource_count: length(cp.resources),
+      updated_at: cp.updated_at,
+      pulumi_version: cp.pulumi_version
+    }
   end
 end
