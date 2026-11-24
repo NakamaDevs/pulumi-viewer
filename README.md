@@ -30,9 +30,11 @@ What you can do with it:
 ## Quick start (Docker)
 
 ```sh
-docker build -t pulumi-viewer .
-docker run --rm -p 4000:4000 pulumi-viewer          # demo state at http://localhost:4000
+docker run --rm -p 4000:4000 ghcr.io/nakamadevs/pulumi-viewer:latest   # demo state at http://localhost:4000
 ```
+
+Images are multi-arch (amd64, arm64): `latest` is `main`, `sha-<commit>` pins one commit.
+To run your own changes, `docker build -t pulumi-viewer .` from a clone.
 
 More Docker samples (real S3, local folder, emulator) and Aspire AppHost samples in
 **C#, TypeScript and Go**: [docs/aspire.md](docs/aspire.md).

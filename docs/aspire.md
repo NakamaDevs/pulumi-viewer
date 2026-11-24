@@ -1,9 +1,16 @@
 # Run Pulumi Viewer with Docker and Aspire
 
-Pulumi Viewer ships a `Dockerfile` at the repository root (a Phoenix release, about 50 MB at run time).
-That image is the easiest way to add it to an [Aspire](https://aspire.dev) AppHost: Aspire builds
-it from the Dockerfile and shows it in the dashboard next to your other resources. You need no
-Elixir or Node on the machine that runs the AppHost.
+Pulumi Viewer is published as a multi-arch image (linux/amd64, linux/arm64) on every push to `main`:
+
+| Tag | Meaning |
+| --- | --- |
+| `ghcr.io/nakamadevs/pulumi-viewer:latest` | newest `main` |
+| `ghcr.io/nakamadevs/pulumi-viewer:sha-<commit>` | one exact commit (pin this for repeatable setups) |
+| `ghcr.io/nakamadevs/pulumi-viewer:<version>` | a release tag `v<version>` |
+
+Use the image in an [Aspire](https://aspire.dev) AppHost or with plain Docker. You need no Elixir
+or Node. To run your own changes, build the `Dockerfile` at the repository root instead (the
+"dev version" below).
 
 ## Settings
 
@@ -23,7 +30,8 @@ in dev (turn it off there with `TIDEWAVE=false`).
 ## Docker
 
 ```sh
-docker build -t pulumi-viewer .
+docker pull ghcr.io/nakamadevs/pulumi-viewer:latest
+docker tag ghcr.io/nakamadevs/pulumi-viewer:latest pulumi-viewer   # or: docker build -t pulumi-viewer .
 
 # demo state
 docker run --rm -p 4000:4000 pulumi-viewer
@@ -55,8 +63,8 @@ Each sample adds three resources:
 - `pulumi-viewer-local`: state in S3 on an emulator container in the same AppHost.
 - `pulumi-viewer-dev`: a real bucket, with credentials that come from AppHost parameters.
 
-Change the path `../pulumi-viewer` to the place of your clone. Use one AppHost language; each file
-is complete.
+Each sample uses the published image; the comment above `viewer` shows the dev-version line.
+Use one AppHost language; each file is complete.
 
 ### TypeScript (`apphost.mts`)
 
@@ -65,9 +73,10 @@ import { createBuilder } from './.modules/aspire.js';
 
 const builder = await createBuilder();
 
+// Published image. For the dev version use: builder.addDockerfile(name, '../pulumi-viewer')
 const viewer = (name: string) =>
   builder
-    .addDockerfile(name, '../pulumi-viewer')
+    .addContainer(name, { image: 'ghcr.io/nakamadevs/pulumi-viewer', tag: 'latest' })
     .withHttpEndpoint({ targetPort: 4000 })
     .withExternalHttpEndpoints();
 
@@ -106,8 +115,9 @@ await builder.build().run();
 ```csharp
 var builder = DistributedApplication.CreateBuilder(args);
 
+// Published image. For the dev version use: builder.AddDockerfile(name, "../pulumi-viewer")
 IResourceBuilder<ContainerResource> Viewer(string name) =>
-    builder.AddDockerfile(name, "../pulumi-viewer")
+    builder.AddContainer(name, "ghcr.io/nakamadevs/pulumi-viewer", "latest")
         .WithHttpEndpoint(targetPort: 4000)
         .WithExternalHttpEndpoints();
 
@@ -160,8 +170,10 @@ func main() {
 		log.Fatal(aspire.FormatError(err))
 	}
 
+	// Published image. For the dev version use: builder.AddDockerfile(name, "../pulumi-viewer")
 	viewer := func(name string) *aspire.ContainerResource {
-		return builder.AddDockerfile(name, "../pulumi-viewer").
+		return builder.AddContainer(name, "ghcr.io/nakamadevs/pulumi-viewer").
+			WithImageTag("latest").
 			WithHttpEndpoint(aspire.HttpEndpointTargetPort(4000)).
 			WithExternalHttpEndpoints()
 	}
