@@ -88,7 +88,7 @@ defmodule PulumiViewer.CloudFormation.Client do
         params: Map.merge(params, %{"Action" => action, "Version" => "2010-05-15"})
       }
 
-      case ExAws.request(
+      case request(
              op,
              Keyword.merge([region: region, retries: [max_attempts: 1]], Keyword.new(opts))
            ) do
@@ -112,6 +112,16 @@ defmodule PulumiViewer.CloudFormation.Client do
     end
   end
 
+  # The host credential helper is read inside ExAws's AuthCache, which raises or exits when it
+  # does not answer.
+  defp request(op, opts) do
+    ExAws.request(op, opts)
+  rescue
+    _ -> {:error, :credential_helper}
+  catch
+    :exit, _ -> {:error, :credential_helper}
+  end
+
   defp body(%{body: b}), do: b
   defp body(b), do: b
 
@@ -119,15 +129,29 @@ defmodule PulumiViewer.CloudFormation.Client do
 
   @doc """
   Where the credentials come from: keys in the environment, an `AWS_PROFILE` from the shared
-  config (also AWS SSO, refreshed from the token cache), an ECS container role, or none.
+  config (also AWS SSO, refreshed from the token cache), a host credential helper
+  (`:container_full_uri`, refreshed before `Expiration`), an ECS container role, or none.
   """
   def credential_source do
     cond do
-      present?("AWS_ACCESS_KEY_ID") -> :env
-      present?("AWS_PROFILE") -> {:profile, System.get_env("AWS_PROFILE")}
-      present?("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI") -> :container
-      present?("AWS_CONTAINER_CREDENTIALS_FULL_URI") -> :container
-      true -> :none
+      present?("AWS_ACCESS_KEY_ID") ->
+        :env
+
+      present?("AWS_CONTAINER_CREDENTIALS_FULL_URI") and
+          present?("AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE") ->
+        :container_full_uri
+
+      present?("AWS_PROFILE") ->
+        {:profile, System.get_env("AWS_PROFILE")}
+
+      present?("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI") ->
+        :container
+
+      present?("AWS_CONTAINER_CREDENTIALS_FULL_URI") ->
+        :container
+
+      true ->
+        :none
     end
   end
 

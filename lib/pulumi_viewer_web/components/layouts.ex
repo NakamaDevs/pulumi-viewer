@@ -38,7 +38,13 @@ defmodule PulumiViewerWeb.Layouts do
     <header class="navbar border-b border-base-300 px-4 sm:px-6">
       <div class="flex-1 flex items-center gap-3">
         <a href="/" class="font-semibold tracking-tight">Pulumi Viewer</a>
-        <span class="badge badge-ghost font-mono text-xs" title="Backend URL">{PulumiViewer.backend_label()}</span>
+        <span
+          :for={s <- PulumiViewer.sources_label()}
+          class="badge badge-ghost font-mono text-xs"
+          title="Source"
+        >
+          {s}
+        </span>
       </div>
       <div class="flex-none"><.theme_toggle /></div>
     </header>

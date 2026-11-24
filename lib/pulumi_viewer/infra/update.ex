@@ -5,6 +5,7 @@ defmodule PulumiViewer.Infra.Update do
     read :for_stack do
       argument :project, :string
       argument :stack, :string, allow_nil?: false
+      argument :source, :string
       manual PulumiViewer.Infra.Update.Read
     end
   end
@@ -27,7 +28,7 @@ defmodule PulumiViewer.Infra.Update.Read do
   @impl true
   def read(query, _dlq, _opts, _ctx) do
     {:ok,
-     State.updates(query.arguments[:project], query.arguments.stack)
+     State.updates(query.arguments[:source], query.arguments[:project], query.arguments.stack)
      |> Enum.map(&struct(Update, &1))}
   end
 end

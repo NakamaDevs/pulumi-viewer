@@ -6,7 +6,9 @@ emulator. Point it at the same URL you use for `pulumi login`.
 
 What you can do with it:
 
-- **List every stack** in a backend, grouped by project, with resource count, last update and Pulumi version.
+- **Read several sources at once** (`PULUMI_VIEWER_SOURCES`): Pulumi file or S3 state and live CloudFormation side by side. One failing source shows its own error; the others still render.
+- **List every stack grouped by environment** (DEV, staging, PROD, then account-wide stacks such as `shared` and `ci`), then by source and project, with a Pulumi or CloudFormation badge, resource count, last update and Pulumi version. Filter by environment and source.
+- **Follow the same resource across sources**: a resource with the same physical ID in Pulumi and in CloudFormation links to the other stack.
 - **See a stack as a graph**: resources laid out by dependency, with parent and provider links (xyflow + ELK).
 - **Open any resource**: URN, physical ID, parent, inputs, outputs and raw JSON, highlighted with the [diffs.com](https://diffs.com) code viewer. Secrets stay encrypted (`[secret]`).
 - **Search resources** by name, type or physical ID.
@@ -65,6 +67,22 @@ The backend URL uses the same form as `pulumi login`. The viewer only lists and 
 | `.pulumi/stacks/<project>/<stack>.json[.gz]` | current checkpoint: resources, parents, dependencies, providers |
 | `.pulumi/stacks/<stack>.json[.gz]` | legacy (non project-scoped) stacks |
 | `.pulumi/history/<project>/<stack>/*.history.json` | update history |
+
+### Several sources
+
+```sh
+PULUMI_VIEWER_SOURCES='pulumi=file:///state/pulumi;cloudformation=cloudformation://us-east-1'
+```
+
+One `name=url` entry per line or `;`-separated; each URL is `file://`, `s3://` or
+`cloudformation://`. `PULUMI_BACKEND_URL` alone still works (one source named `default`). Stack
+pages are at `/sources/<source>/stacks/<project>/<stack>`; `/stacks/<project>/<stack>` reads the
+first source.
+
+Environment of a stack: for Pulumi the stack name (`dev`, `staging`, `prod`, also
+`<env>-<anything>` and `<anything>-<env>`); for CloudFormation the first name token that is
+`dev|prod|staging|shared|ci`. `shared`, `ci` and stacks without an environment are account-wide.
+Pulumi state is read again on each page load; CloudFormation responses are cached for 60 s.
 
 ### CloudFormation source
 

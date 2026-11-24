@@ -15,19 +15,36 @@ cond do
     :ok
 end
 
-# Keys in the environment first; then AWS_PROFILE from ~/.aws (also AWS SSO, refreshed every 30 s);
-# then an instance role.
+# Several sources at once: one `name=url` per line or `;`-separated (see PulumiViewer.Sources).
+case System.get_env("PULUMI_VIEWER_SOURCES") do
+  v when v in [nil, ""] -> :ok
+  v -> config :pulumi_viewer, sources: v
+end
+
+# Credential chain:
+# 1. keys in the environment;
+# 2. a host credential helper (AWS_CONTAINER_CREDENTIALS_FULL_URI + AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE,
+#    ECS JSON format), refreshed by ExAws before `Expiration` (works with `aws login` profiles);
+# 3. AWS_PROFILE from ~/.aws (also AWS SSO, refreshed every 30 s);
+# 4. an instance role.
+present? = &(System.get_env(&1) not in [nil, ""])
+
+helper =
+  if present?.("AWS_CONTAINER_CREDENTIALS_FULL_URI") and
+       present?.("AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE"),
+     do: [:pod_identity],
+     else: []
+
 aws_profile =
-  case System.get_env("AWS_PROFILE") do
-    p when p in [nil, ""] -> []
-    p -> [{:awscli, p, 30}]
-  end
+  if present?.("AWS_PROFILE"), do: [{:awscli, System.get_env("AWS_PROFILE"), 30}], else: []
+
+chain = &([{:system, &1}] ++ helper ++ aws_profile ++ [:instance_role])
 
 config :ex_aws,
   region: System.get_env("AWS_REGION", "us-east-1"),
-  access_key_id: [{:system, "AWS_ACCESS_KEY_ID"}] ++ aws_profile ++ [:instance_role],
-  secret_access_key: [{:system, "AWS_SECRET_ACCESS_KEY"}] ++ aws_profile ++ [:instance_role],
-  security_token: [{:system, "AWS_SESSION_TOKEN"}] ++ aws_profile ++ [:instance_role]
+  access_key_id: chain.("AWS_ACCESS_KEY_ID"),
+  secret_access_key: chain.("AWS_SECRET_ACCESS_KEY"),
+  security_token: chain.("AWS_SESSION_TOKEN")
 
 # config/runtime.exs is executed for all environments, including
 # during releases. It is executed after compilation and before the

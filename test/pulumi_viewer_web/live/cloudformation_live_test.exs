@@ -28,7 +28,7 @@ defmodule PulumiViewerWeb.CloudFormationLiveTest do
     assert html =~ "cloudformation://us-east-1"
     assert html =~ "web-prod"
     assert html =~ "UPDATE_COMPLETE"
-    assert has_element?(view, ~s|a[href="/stacks/web/web-prod"]|)
+    assert has_element?(view, ~s|a[href="/sources/default/stacks/web/web-prod"]|)
   end
 
   test "stack page shows the graph, the stack outputs and the history", %{conn: conn} do

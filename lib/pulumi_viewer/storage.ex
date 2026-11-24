@@ -22,17 +22,11 @@ defmodule PulumiViewer.Storage do
   def parse_url("cloudformation://" <> rest),
     do: {PulumiViewer.CloudFormation, PulumiViewer.CloudFormation.parse_url(rest)}
 
-  def current, do: parse_url(Application.fetch_env!(:pulumi_viewer, :backend_url))
+  @doc "The backend of one source (see `PulumiViewer.Sources`)."
+  def for_source(%{url: url}), do: parse_url(url)
 
-  def list(prefix) do
-    {mod, cfg} = current()
-    mod.list(cfg, prefix)
-  end
-
-  def read(key) do
-    {mod, cfg} = current()
-    mod.read(cfg, key)
-  end
+  def list({mod, cfg}, prefix), do: mod.list(cfg, prefix)
+  def read({mod, cfg}, key), do: mod.read(cfg, key)
 
   # keep relative paths relative so tests and `file://.` behave like the Pulumi CLI
   defp relative(_expanded, "~" <> _ = path), do: Path.expand(path)

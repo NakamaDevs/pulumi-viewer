@@ -24,13 +24,13 @@ defmodule PulumiViewer do
 
   defp find_source_error(_), do: nil
 
-  @doc "Backend URL plus the S3 endpoint when one is set, for the header."
-  def backend_label do
-    url = Application.get_env(:pulumi_viewer, :backend_url, "")
+  @doc "One `name: url` label per source, plus the S3 endpoint when one is set, for the header."
+  def sources_label do
+    ep = System.get_env("AWS_ENDPOINT_URL_S3") || System.get_env("AWS_ENDPOINT_URL")
 
-    case System.get_env("AWS_ENDPOINT_URL_S3") || System.get_env("AWS_ENDPOINT_URL") do
-      nil -> url
-      ep -> "#{url} @ #{ep}"
+    for s <- PulumiViewer.Sources.all() do
+      label = "#{s.name}: #{s.url}"
+      if ep && String.starts_with?(s.url, "s3://"), do: "#{label} @ #{ep}", else: label
     end
   end
 end
