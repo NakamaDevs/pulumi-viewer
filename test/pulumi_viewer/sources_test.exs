@@ -79,4 +79,16 @@ defmodule PulumiViewer.SourcesTest do
                })
     end
   end
+
+  describe "comma split edge cases" do
+    test "a ; after a comma inside a query value keeps the query whole" do
+      assert [%{name: "a", url: "s3://b?prefix=x,y"}, %{name: "c", url: "file://z"}] =
+               PulumiViewer.Sources.parse("a=s3://b?prefix=x,y;c=file://z")
+    end
+
+    test "spaces around = after a comma still start a new entry" do
+      assert [%{name: "a", url: "s3://b"}, %{name: "b", url: "file://c"}] =
+               PulumiViewer.Sources.parse("a = s3://b , b = file://c")
+    end
+  end
 end

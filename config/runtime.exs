@@ -18,7 +18,7 @@ end
 # Several sources at once: `name=url` entries separated by a newline, `;` or `,` (see
 # PulumiViewer.Sources). PULUMI_BACKEND_URLS is the older name of the same setting.
 # An empty PULUMI_VIEWER_SOURCES counts as unset.
-blank = fn v -> if v in [nil, ""] or String.trim(v) == "", do: nil, else: v end
+blank = fn v -> if v in [nil, ""] or String.replace(v, ~r/[\s,;]/, "") == "", do: nil, else: v end
 
 case blank.(System.get_env("PULUMI_VIEWER_SOURCES")) ||
        blank.(System.get_env("PULUMI_BACKEND_URLS")) do

@@ -70,7 +70,7 @@ defmodule PulumiViewer.Sources do
       text
       # a comma splits only where a new `name=scheme://` or `scheme://` entry starts, so
       # `?prefix=a,b` stays
-      |> String.split(~r/[\n;]|,(?=\s*(?:[^,=\s]+=)?[a-z][a-z0-9+.-]*:\/\/)/i, trim: true)
+      |> String.split(~r/[\n;]|,(?=\s*(?:[^,;=\s]+\s*=\s*)?[a-z][a-z0-9+.-]*:\/\/)/i, trim: true)
       # stray separators: `a=s3://bucket,` is bucket `bucket`
       |> Enum.map(&String.replace(&1, ~r/^[\s,]+|[\s,]+$/, ""))
       |> Enum.reject(&(&1 == ""))
