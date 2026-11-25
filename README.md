@@ -116,6 +116,34 @@ retried with backoff. Missing or expired credentials show a clear message.
 
 Tidewave is optional and dev only. Turn it off with `TIDEWAVE=false mise run serve`.
 
+## Resource options and safety checks
+
+The Resources pages show the options of each resource: protected (🔒), `retain`
+(retainOnDelete), `DBR` (deleteBeforeReplace) and `CFN` (a CloudFormation stack also owns it).
+The "All flags" filter selects protected, not protected, retain, no retain, CloudFormation or
+resources with findings. The details panel shows the options, the owner and the findings.
+
+Checks that `pulumi preview` does not give (`PulumiViewer.Checks`, read only):
+
+| Check | Finding |
+| --- | --- |
+| `option_mismatch` | The state options differ from the code: a CloudFormation-owned resource without protect and retainOnDelete, a script-owned resource with retainOnDelete, or a difference from `<stack>.options.json`. |
+| `double_owner` | The resource is in Pulumi state and a CloudFormation stack owns it (from the inventory or a CloudFormation source). Error when it is not protected and retained. |
+| `unprotected` | Not protected in a stack where most resources are protected. |
+| `state_edit` | The stack changed after its last update without a history record (`pulumi state unprotect`, `state delete`, `state move`). History shows it as a "state edit" row; the time comes from the newest `.pulumi/backups` file. |
+
+Owners and the expected options come from the infra repo inventory:
+`PULUMI_VIEWER_INVENTORY=<dir>` with `<dir>/<stack>.json` (items with `type`, `name`, `owner`)
+and an optional `<dir>/<stack>.options.json`
+(`{"resources": [{"type", "name", "protect", "retainOnDelete", "deleteBeforeReplace"}]}`).
+
+The same checks as JSON:
+
+- CLI in a checkout: `mix pv checks [--source S] [--stack PROJECT/STACK] [--min warning]`,
+  `mix pv flags --stack PROJECT/STACK`. Exit 1 when a finding exists.
+- CLI in the container: `bin/checks checks --min warning`.
+- MCP (Streamable HTTP, read only): `POST /mcp`, tools `checks` and `flags`.
+
 ## Screenshots and video
 
 `tools/capture/capture.mjs` (Playwright) takes the screenshots and records the demo, with

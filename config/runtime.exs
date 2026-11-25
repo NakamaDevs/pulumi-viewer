@@ -26,6 +26,13 @@ case blank.(System.get_env("PULUMI_VIEWER_SOURCES")) ||
   v -> config :pulumi_viewer, sources: v
 end
 
+# Import inventory of the infra repo (<dir>/<stack>.json, optional <dir>/<stack>.options.json):
+# resource owners and the options the code sets, for the safety checks (PulumiViewer.Checks).
+case blank.(System.get_env("PULUMI_VIEWER_INVENTORY")) do
+  nil -> :ok
+  dir -> config :pulumi_viewer, inventory_dir: dir
+end
+
 # Credential chain: keys in the environment; then a host credential helper
 # (AWS_CONTAINER_CREDENTIALS_FULL_URI + AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE), which
 # PulumiViewer.HostCredentials reads and passes to each request; then AWS_PROFILE from ~/.aws

@@ -34,6 +34,8 @@ defmodule PulumiViewer.Pulumi.Checkpoint do
       id: r["id"],
       custom: r["custom"] == true,
       protect: r["protect"] == true,
+      retain_on_delete: r["retainOnDelete"] == true,
+      delete_before_replace: r["deleteBeforeReplace"] == true,
       parent_urn: r["parent"],
       provider_urn: provider_urn(r["provider"]),
       dependencies: r["dependencies"] || [],

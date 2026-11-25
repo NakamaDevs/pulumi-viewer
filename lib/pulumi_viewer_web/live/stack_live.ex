@@ -16,6 +16,7 @@ defmodule PulumiViewerWeb.StackLive do
           |> assign(tab: start_tab(socket), q: "", selected: nil, providers: false, updates: nil)
           |> assign(collapsed: MapSet.new(), selected_update: nil)
           |> assign_links(src)
+          |> assign_checks(src, project, stack)
 
         case Infra.list_resources(project, stack, src.name) do
           {:ok, resources} ->
@@ -41,6 +42,7 @@ defmodule PulumiViewerWeb.StackLive do
            updates: nil,
            q: "",
            links: %{},
+           checks: %{},
            graph_json: "{}",
            missing: "Unknown source #{params["source"]}."
          )}
@@ -58,7 +60,32 @@ defmodule PulumiViewerWeb.StackLive do
     end
   end
 
+  # Flags, owner and findings of each resource (PulumiViewer.Checks); Pulumi stacks only.
+  defp assign_checks(socket, %{kind: :pulumi} = src, project, stack) do
+    socket = assign(socket, checks: %{})
+
+    if connected?(socket) do
+      start_async(socket, :checks, fn ->
+        case PulumiViewer.Checks.for_stack(src.name, project, stack) do
+          {:ok, %{resources: rs, findings: fs}} ->
+            fs = Enum.group_by(fs, & &1.urn)
+            Map.new(rs, &{&1.urn, %{owner: &1.owner, findings: Map.get(fs, &1.urn, [])}})
+
+          _ ->
+            %{}
+        end
+      end)
+    else
+      socket
+    end
+  end
+
+  defp assign_checks(socket, _, _, _), do: assign(socket, checks: %{})
+
   @impl true
+  def handle_async(:checks, {:ok, checks}, socket), do: {:noreply, assign(socket, checks: checks)}
+  def handle_async(:checks, _, socket), do: {:noreply, socket}
+
   def handle_async(:links, {:ok, links}, socket), do: {:noreply, assign(socket, links: links)}
   def handle_async(:links, _, socket), do: {:noreply, socket}
 
@@ -241,7 +268,7 @@ defmodule PulumiViewerWeb.StackLive do
               aria-label="Resources"
               class="flex-1 overflow-auto"
             >
-              <.resource_rows rows={@rows} selected={@selected && @selected.urn} />
+              <.resource_rows rows={@rows} selected={@selected && @selected.urn} checks={@checks} />
               <p :if={@rows == []} class="px-4 py-6 text-center opacity-70">
                 No resources match the filter.
               </p>
@@ -267,7 +294,7 @@ defmodule PulumiViewerWeb.StackLive do
                 phx-click="select_update"
                 phx-value-version={u.version}
               >
-                <td>{u.version}</td>
+                <td>{version_label(u)}</td>
                 <td class="text-xs whitespace-nowrap">
                   {u.started_at && Calendar.strftime(u.started_at, "%Y-%m-%d %H:%M")}
                 </td>
@@ -286,6 +313,7 @@ defmodule PulumiViewerWeb.StackLive do
             r={@selected}
             links={Map.get(@links, @selected.id || "", [])}
             resources={@resources}
+            check={@checks[@selected.urn]}
           />
           <.update_details :if={@selected_update} u={@selected_update} />
         </:details>

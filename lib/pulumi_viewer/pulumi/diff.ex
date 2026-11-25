@@ -29,7 +29,23 @@ defmodule PulumiViewer.Pulumi.Diff do
     cond do
       o.inputs != r.inputs -> "update"
       r.type == @stack_type and o.outputs != r.outputs -> "update"
-      true -> nil
+      true -> flag_op(o, r)
+    end
+  end
+
+  @flags [
+    protect: "protect",
+    retain_on_delete: "retain",
+    delete_before_replace: "delete before replace"
+  ]
+
+  # A change of resource options only, for example `pulumi state unprotect`.
+  defp flag_op(o, r) do
+    case for {k, label} <- @flags,
+             Map.get(o, k, false) != Map.get(r, k, false),
+             do: "#{label} #{if Map.get(r, k), do: "on", else: "off"}" do
+      [] -> nil
+      ops -> Enum.join(ops, ", ")
     end
   end
 

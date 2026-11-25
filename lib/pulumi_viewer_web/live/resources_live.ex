@@ -11,6 +11,8 @@ defmodule PulumiViewerWeb.ResourcesLive do
         page_title: "Resources",
         q: "",
         package: "all",
+        flag: "all",
+        checks: %{},
         collapsed: MapSet.new(),
         selected: nil,
         results: [],
@@ -41,7 +43,46 @@ defmodule PulumiViewerWeb.ResourcesLive do
         do: Map.new([:pulumi, :cloudformation], &{&1, PulumiViewer.Infra.Links.index(&1)}),
         else: %{}
 
-    %{results: results, stacks: stacks, links: links}
+    %{
+      results: results,
+      stacks: stacks,
+      links: links,
+      checks: checks(stacks, Map.get(links, :pulumi, %{}))
+    }
+  end
+
+  # stack key => urn => %{owner, findings}, for Pulumi stacks only
+  defp checks(stacks, links) do
+    stacks
+    |> Enum.filter(fn {st, res} -> match?({:ok, _}, res) and (st.kind || :pulumi) == :pulumi end)
+    |> then(fn list ->
+      Task.Supervisor.async_stream_nolink(
+        PulumiViewer.TaskSupervisor,
+        list,
+        fn {st, {:ok, rs}} ->
+          # reuse the resources already read: one checkpoint read less per stack
+          by_urn =
+            case PulumiViewer.Checks.for_stack(st.source, st.project, st.name, links, rs) do
+              {:ok, %{resources: rs, findings: fs}} ->
+                fs = Enum.group_by(fs, & &1.urn)
+                Map.new(rs, &{&1.urn, %{owner: &1.owner, findings: Map.get(fs, &1.urn, [])}})
+
+              _ ->
+                %{}
+            end
+
+          {SourceResults.key(st), by_urn}
+        end,
+        max_concurrency: 8,
+        timeout: 60_000,
+        on_timeout: :kill_task
+      )
+    end)
+    |> Enum.flat_map(fn
+      {:ok, pair} -> [pair]
+      _ -> []
+    end)
+    |> Map.new()
   end
 
   defp env_sort(%{environment: {:env, _} = e}), do: PulumiViewer.Environment.sort_key(e)
@@ -64,7 +105,8 @@ defmodule PulumiViewerWeb.ResourcesLive do
       {:noreply,
        assign(socket,
          q: params["q"] || socket.assigns.q,
-         package: params["package"] || socket.assigns.package
+         package: params["package"] || socket.assigns.package,
+         flag: params["flag"] || socket.assigns.flag
        )}
 
   def handle_event("toggle", params, socket) do
@@ -94,7 +136,7 @@ defmodule PulumiViewerWeb.ResourcesLive do
   defp toggle_key(%{"key" => k, "urn" => u}), do: k <> "|" <> u
   defp toggle_key(%{"key" => k}), do: k
 
-  defp rows(resources, key, collapsed, q, package) do
+  defp rows(resources, key, collapsed, q, package, flag, checks) do
     stack_collapsed =
       for c <- collapsed,
           String.starts_with?(c, key <> "|"),
@@ -103,9 +145,33 @@ defmodule PulumiViewerWeb.ResourcesLive do
 
     resources
     |> Enum.filter(&(package == "all" or &1.package == package))
-    |> ResourceTree.flatten(if(q == "", do: stack_collapsed, else: MapSet.new()))
+    |> ResourceTree.flatten(
+      if(q == "" and flag == "all", do: stack_collapsed, else: MapSet.new())
+    )
     |> ResourceTree.filter(q)
+    |> Enum.filter(&flag?(flag, &1.resource, checks[&1.resource.urn]))
   end
+
+  @flags [
+    {"all", "All flags"},
+    {"protected", "Protected"},
+    {"unprotected", "Not protected"},
+    {"retain", "Retain on delete"},
+    {"no-retain", "No retain on delete"},
+    {"cloudformation", "Also in CloudFormation"},
+    {"findings", "With findings"}
+  ]
+
+  # stack and provider resources have no options worth a filter
+  defp flag?("all", _, _), do: true
+  defp flag?(_, %{type: "pulumi:" <> _}, _), do: false
+  defp flag?("protected", r, _), do: r.protect
+  defp flag?("unprotected", r, _), do: not r.protect
+  defp flag?("retain", r, _), do: r.retain_on_delete == true
+  defp flag?("no-retain", r, _), do: r.retain_on_delete != true
+  defp flag?("cloudformation", _, %{owner: %{kind: :cloudformation}}), do: true
+  defp flag?("findings", _, %{findings: [_ | _]}), do: true
+  defp flag?(_, _, _), do: false
 
   defp packages(stacks),
     do:
@@ -134,19 +200,34 @@ defmodule PulumiViewerWeb.ResourcesLive do
 
         case res do
           {:ok, rs} ->
-            {st, key, {:ok, rows(rs, key, assigns.collapsed, assigns.q, assigns.package)}}
+            ck = Map.get(assigns.checks, key, %{})
+
+            {st, key,
+             {:ok, rows(rs, key, assigns.collapsed, assigns.q, assigns.package, assigns.flag, ck)}}
 
           err ->
             {st, key, err}
         end
       end
-      |> Enum.reject(fn {_, _, r} -> assigns.q != "" and r == {:ok, []} end)
+      |> Enum.reject(fn {_, _, r} ->
+        (assigns.q != "" or assigns.flag != "all") and r == {:ok, []}
+      end)
 
     assigns =
       assign(assigns,
         shown: shown,
         sel: selected(assigns.stacks, assigns.selected),
-        total: Enum.sum(for({_, _, {:ok, rows}} <- shown, do: length(rows)))
+        total: Enum.sum(for({_, _, {:ok, rows}} <- shown, do: length(rows))),
+        flags: @flags,
+        problems:
+          for(
+            {_, by_urn} <- assigns.checks,
+            {_, c} <- by_urn,
+            f <- c.findings,
+            f.severity != :info,
+            do: f
+          )
+          |> Enum.frequencies_by(& &1.severity)
       )
 
     ~H"""
@@ -176,6 +257,9 @@ defmodule PulumiViewerWeb.ResourcesLive do
                 <option value="all" selected={@package == "all"}>All providers</option>
                 <option :for={p <- packages(@stacks)} value={p} selected={@package == p}>{p}</option>
               </select>
+              <select name="flag" class="pv-select" aria-label="Resource options">
+                <option :for={{v, l} <- @flags} value={v} selected={@flag == v}>{l}</option>
+              </select>
               <button
                 type="button"
                 class="pv-icon-btn border border-base-300 bg-base-100"
@@ -190,6 +274,19 @@ defmodule PulumiViewerWeb.ResourcesLive do
               <span class="pv-section-title">Resources</span>
               <span class="pv-count">{@total}</span>
               <span :if={@loading} class="loading loading-spinner loading-xs"></span>
+              <span class="flex-1"></span>
+              <button
+                :for={{sev, n} <- Enum.sort(@problems)}
+                type="button"
+                id={"findings-#{sev}"}
+                class="pv-flag cursor-pointer"
+                data-sev={sev}
+                phx-click="filter"
+                phx-value-flag="findings"
+                title="Show the resources with findings"
+              >
+                {n} {if sev == :error, do: "errors", else: "warnings"}
+              </button>
             </div>
             <div
               :for={{s, {:error, msg}} <- @results}
@@ -238,6 +335,7 @@ defmodule PulumiViewerWeb.ResourcesLive do
                         rows={rows}
                         key={key}
                         base_depth={1}
+                        checks={Map.get(@checks, key, %{})}
                         selected={match?({^key, _}, @selected) && elem(@selected, 1)}
                       />
                     <% {:error, msg} -> %>
@@ -254,7 +352,13 @@ defmodule PulumiViewerWeb.ResourcesLive do
         <:details>
           <%= case @sel do %>
             <% {st, rs, %{} = r} -> %>
-              <.resource_details r={r} resources={rs} stack={st} links={links_for(@links, st, r)} />
+              <.resource_details
+                r={r}
+                resources={rs}
+                stack={st}
+                links={links_for(@links, st, r)}
+                check={get_in(@checks, [SourceResults.key(st), r.urn])}
+              />
             <% _ -> %>
           <% end %>
         </:details>
