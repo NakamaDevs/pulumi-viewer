@@ -21,6 +21,10 @@ defmodule PulumiViewer.InfraTest do
     [newest, older] = PulumiViewer.Infra.list_updates!("demo", "dev")
     assert newest.version == 7
     assert older.result == "failed"
+
+    assert newest.resources == [
+             %{op: "create", name: "assets-policy", type: "aws:s3/bucketPolicy:BucketPolicy"}
+           ]
   end
 end
 

@@ -153,6 +153,8 @@ html, body { background: var(--color-base-200); color: var(--color-base-content)
 .pv-chip { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px; border-radius: 9999px; font-size: 12px; font-weight: 600; border: 1px solid var(--color-base-300); }
 .pv-chip[data-result=succeeded] { color: var(--pv-running); }
 .pv-chip[data-result=failed] { color: var(--pv-failed); }
+.pv-chip[data-op=create], .pv-chip[data-op=import] { color: var(--pv-running); }
+.pv-chip[data-op=delete], .pv-chip[data-op=replace] { color: var(--pv-failed); }
 .pv-badge { display: inline-flex; align-items: center; height: 20px; padding: 0 6px; border-radius: 4px; font-size: 11px; font-weight: 600; }
 .pv-badge[data-kind=pulumi] { background: rgb(139 92 246 / .14); color: #7c3aed; }
 .pv-badge[data-kind=cloudformation] { background: rgb(245 158 11 / .16); color: #b45309; }

@@ -18,6 +18,7 @@ defmodule PulumiViewer.Infra.Update do
     attribute :started_at, :utc_datetime, public?: true
     attribute :duration_s, :integer, public?: true
     attribute :changes, :map, public?: true
+    attribute :resources, {:array, :map}, public?: true
   end
 end
 
