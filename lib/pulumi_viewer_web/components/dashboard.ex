@@ -404,6 +404,23 @@ defmodule PulumiViewerWeb.Dashboard do
           <dt>{k}</dt><dd>{v}</dd>
         <% end %>
       </dl>
+      <table :if={@u.resources not in [nil, []]} class="table table-xs mt-2">
+        <thead>
+          <tr>
+            <th>Change</th><th>Resource</th><th>Type</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr :for={r <- @u.resources} data-op={r.op}>
+            <td><span class="pv-chip" data-op={r.op}>{r.op}</span></td>
+            <td class="font-semibold break-all">{r.name}</td>
+            <td class="font-mono text-xs opacity-70 break-all">{r.type}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p :if={@u.resources == nil} class="mt-2 text-xs opacity-60">
+        The list of changed resources is not available for this update.
+      </p>
     </.section>
     """
   end

@@ -35,6 +35,13 @@ defmodule PulumiViewer.CloudFormation.MappingTest do
     assert create.kind == "create"
     assert create.result == "succeeded"
     assert create.changes == %{"create" => 2}
+
+    assert create.resources == [
+             %{op: "create", name: "Fn", type: "AWS::Lambda::Function"},
+             %{op: "create", name: "Role", type: "AWS::IAM::Role"}
+           ]
+
+    assert update.resources == []
     assert create.started_at == ~U[2026-11-01 09:00:00Z]
   end
 
@@ -77,5 +84,37 @@ defmodule PulumiViewer.CloudFormation.MappingTest do
     assert fun.dependencies == [role.urn]
     assert fun.inputs["Role"] == %{"Fn::GetAtt" => ["Role", "Arn"]}
     assert fun.outputs["ResourceStatus"] == "UPDATE_COMPLETE"
+  end
+
+  test "a stack-level consistency check in the middle does not split the update" do
+    ev = fn t, id, type, status, reason ->
+      %{
+        "Timestamp" => "2026-09-23T15:01:#{t}Z",
+        "StackName" => "roles",
+        "LogicalResourceId" => id,
+        "ResourceType" => type,
+        "ResourceStatus" => status,
+        "ResourceStatusReason" => reason
+      }
+    end
+
+    stack = "AWS::CloudFormation::Stack"
+    role = "AWS::IAM::Role"
+
+    events =
+      Enum.reverse([
+        ev.("10", "roles", stack, "CREATE_IN_PROGRESS", "User Initiated"),
+        ev.("20", "A", role, "CREATE_IN_PROGRESS", ""),
+        ev.("30", "A", role, "CREATE_COMPLETE", ""),
+        ev.("40", "roles", stack, "CREATE_IN_PROGRESS", "Eventual consistency check initiated"),
+        ev.("41", "B", role, "CREATE_COMPLETE", ""),
+        ev.("50", "roles", stack, "CREATE_COMPLETE", "")
+      ])
+
+    assert [u] = Mapping.updates(events)
+    assert u.result == "succeeded"
+    assert u.message == "User Initiated"
+    assert u.changes == %{"create" => 2}
+    assert u.duration_s == 40
   end
 end

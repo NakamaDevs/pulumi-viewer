@@ -4,7 +4,7 @@ defmodule PulumiViewer.Infra.State do
   (resources move between stacks during the day); CloudFormation calls have a 60 s cache.
   """
   alias PulumiViewer.{CloudFormation, Sources, Storage}
-  alias PulumiViewer.Pulumi.{Checkpoint, History, Layout}
+  alias PulumiViewer.Pulumi.{Checkpoint, Diff, History, Layout}
 
   @doc "A source map, or a source name (`nil` is the first source)."
   def source(%{url: _} = s), do: {:ok, s}
@@ -67,13 +67,37 @@ defmodule PulumiViewer.Infra.State do
     Layout.history_prefix(blank(project), stack)
     |> then(&Storage.list(backend, &1))
     |> Layout.history_keys()
+    |> Enum.take(limit + 1)
+    |> Enum.chunk_every(2, 1)
     |> Enum.take(limit)
-    |> Enum.flat_map(fn key ->
+    |> Enum.flat_map(fn [key | older] ->
       with {:ok, body} <- Storage.read(backend, key),
            {:ok, u} <- History.parse(body),
-           do: [u],
+           do: [Map.put(u, :resources, changed_resources(backend, key, older, u.changes))],
            else: (_ -> [])
     end)
+  end
+
+  # The resources this update changed: its checkpoint against the one of the update before.
+  # The first update of a stack starts from nothing. Unknown (nil) when a checkpoint is missing.
+  defp changed_resources(backend, key, older, changes) do
+    with {:ok, now} <- checkpoint_resources(backend, key),
+         {:ok, before} <- previous_resources(backend, older) do
+      Diff.changed(before, now, changes)
+    else
+      _ -> nil
+    end
+  end
+
+  defp previous_resources(_backend, []), do: {:ok, []}
+  defp previous_resources(backend, [key]), do: checkpoint_resources(backend, key)
+
+  defp checkpoint_resources(backend, history_key) do
+    key = String.replace_suffix(history_key, ".history.json", ".checkpoint.json")
+
+    with {:ok, body} <- Storage.read(backend, key),
+         {:ok, cp} <- Checkpoint.parse(body),
+         do: {:ok, cp.resources}
   end
 
   # An S3 source with no access or a missing folder raises; show it as this source's error.

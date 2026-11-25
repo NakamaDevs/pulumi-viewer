@@ -107,7 +107,7 @@ defmodule PulumiViewer.CloudFormation.Mapping do
   @doc """
   Groups `DescribeStackEvents` output (newest first, as AWS returns it) into updates.
   An update starts at a stack-level `*_IN_PROGRESS` and ends at the next stack-level
-  `*_COMPLETE` or `*_FAILED`. Returns the newest update first.
+  `*_COMPLETE` or `*_FAILED`; a stack-level `*_IN_PROGRESS` before that end is part of the same update. Returns the newest update first.
   """
   def updates(events) do
     events
@@ -116,6 +116,11 @@ defmodule PulumiViewer.CloudFormation.Mapping do
       status = e["ResourceStatus"] || ""
 
       cond do
+        # CloudFormation logs a stack-level *_IN_PROGRESS again inside one operation (for example
+        # "Eventual consistency check initiated"); while an update is open, it continues that update.
+        stack_event?(e) and status =~ @start and groups != [] and hd(groups).finish == nil ->
+          groups
+
         stack_event?(e) and status =~ @start ->
           [%{start: e, events: [], finish: nil} | groups]
 
@@ -147,6 +152,15 @@ defmodule PulumiViewer.CloudFormation.Mapping do
     final = finish && finish["ResourceStatus"]
     failure = events |> Enum.reverse() |> Enum.find(&(&1["ResourceStatus"] =~ "FAILED"))
 
+    resources =
+      events
+      |> Enum.filter(&(&1["ResourceStatus"] =~ @done))
+      |> Enum.map(
+        &%{op: op(&1["ResourceStatus"]), name: &1["LogicalResourceId"], type: &1["ResourceType"]}
+      )
+      |> Enum.uniq()
+      |> Enum.sort_by(&{&1.op, &1.name})
+
     %{
       version: version,
       kind: start["ResourceStatus"] |> String.split("_") |> hd() |> String.downcase(),
@@ -163,12 +177,8 @@ defmodule PulumiViewer.CloudFormation.Mapping do
         ),
       started_at: started,
       duration_s: started && ended && DateTime.diff(ended, started),
-      changes:
-        events
-        |> Enum.filter(&(&1["ResourceStatus"] =~ @done))
-        |> Enum.map(&{&1["LogicalResourceId"], op(&1["ResourceStatus"])})
-        |> Enum.uniq()
-        |> Enum.frequencies_by(&elem(&1, 1))
+      changes: Enum.frequencies_by(resources, & &1.op),
+      resources: resources
     }
   end
 

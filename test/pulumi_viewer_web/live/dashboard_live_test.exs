@@ -144,5 +144,11 @@ defmodule PulumiViewerWeb.DashboardLiveTest do
     assert has_element?(view, "#history [data-result='failed']")
     view |> element("#history tr[data-update]:first-child") |> render_click()
     assert has_element?(view, "#details [data-section='update']")
+
+    assert has_element?(
+             view,
+             "#details [data-section='changes'] [data-op='create']",
+             "assets-policy"
+           )
   end
 end
