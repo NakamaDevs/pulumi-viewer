@@ -2,10 +2,14 @@
 # Read-only safety checks in the running container. Prints JSON.
 #   bin/checks checks [--source NAME] [--stack PROJECT/STACK] [--min error|warning|info]
 #   bin/checks flags --stack PROJECT/STACK
-set -e
+# Exit status: 0 no findings, 1 findings, 2 read or usage error.
 list=""
 for a in "$@"; do
   esc=$(printf '%s' "$a" | sed 's/[\\"]/\\&/g; s/#/\\#/g')
   list="$list\"$esc\","
 done
-exec "$(dirname "$0")/pulumi_viewer" rpc "PulumiViewer.CLI.main([${list%,}])"
+# rpc loses the return value, so the expression prints the exit code on a last marker line.
+out=$("$(dirname "$0")/pulumi_viewer" rpc "IO.puts(\"__exit=\" <> to_string(PulumiViewer.CLI.main([${list%,}])))") || exit 2
+printf '%s\n' "$out" | grep -v '^__exit='
+code=$(printf '%s\n' "$out" | sed -n 's/^__exit=//p' | tail -1)
+exit "${code:-2}"

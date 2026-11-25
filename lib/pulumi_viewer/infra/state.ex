@@ -53,8 +53,14 @@ defmodule PulumiViewer.Infra.State do
 
           backend ->
             case safe(fn -> {:ok, pulumi_updates(backend, project, stack, limit)} end) do
-              {:ok, updates} -> state_edit(s, backend, project, stack, updates) ++ updates
-              _ -> []
+              {:ok, updates} ->
+                case safe(fn -> {:ok, state_edit(s, backend, project, stack, updates)} end) do
+                  {:ok, edit} -> edit ++ updates
+                  _ -> updates
+                end
+
+              _ ->
+                []
             end
         end
 
@@ -83,7 +89,9 @@ defmodule PulumiViewer.Infra.State do
   # update. The time is the newest DIY backup taken after the last update (Pulumi writes one on
   # each state save), else unknown.
   defp state_edit(src, backend, project, stack, updates) do
-    with {:ok, now} <- checkpoint(src, project, stack),
+    # a running update saves the stack file after each step and writes history only at the end
+    with [] <- Storage.list(backend, layout_dir(".pulumi/locks/", project, stack)),
+         {:ok, now} <- checkpoint(src, project, stack),
          [last_key | _] <- history_keys(backend, project, stack),
          {:ok, before} <- checkpoint_resources(backend, last_key),
          [_ | _] = changed <- Diff.changed(before, now.resources, %{}) do
@@ -113,15 +121,26 @@ defmodule PulumiViewer.Infra.State do
       |> then(&Storage.list(backend, &1))
       |> Layout.history_keys()
 
-  defp newest_backup(backend, project, stack, after_s) do
-    prefix =
+  defp layout_dir(root, project, stack),
+    do:
       String.replace_prefix(
         Layout.history_prefix(blank(project), stack),
         ".pulumi/history/",
-        ".pulumi/backups/"
+        root
       )
 
-    Storage.list(backend, prefix)
+  # an unreadable backups folder (S3 policy without it) only loses the time
+  defp newest_backup(backend, project, stack, after_s) do
+    case safe(fn ->
+           {:ok, Storage.list(backend, layout_dir(".pulumi/backups/", project, stack))}
+         end) do
+      {:ok, keys} -> newest_after(keys, after_s)
+      _ -> nil
+    end
+  end
+
+  defp newest_after(keys, after_s) do
+    keys
     |> Enum.flat_map(fn k ->
       case Regex.run(~r/\.(\d{19})\.json(?:\.gz)?$/, k) do
         [_, n] -> [div(String.to_integer(n), 1_000_000_000)]

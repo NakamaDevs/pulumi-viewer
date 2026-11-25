@@ -44,7 +44,39 @@ defmodule PulumiViewerWeb.MCP do
 
   def init(opts), do: opts
 
-  def call(%{method: "POST"} = conn, _opts) do
+  def call(%{method: "POST"} = conn, opts) do
+    cond do
+      not json?(conn) -> send_resp(conn, 415, "")
+      not origin_ok?(conn) -> send_resp(conn, 403, "")
+      true -> rpc(conn, opts)
+    end
+  end
+
+  def call(conn, _), do: conn |> put_resp_header("allow", "POST") |> send_resp(405, "")
+
+  # A cross-site HTML form can post urlencoded bodies without a preflight.
+  defp json?(conn),
+    do:
+      Enum.any?(
+        get_req_header(conn, "content-type"),
+        &String.starts_with?(&1, "application/json")
+      )
+
+  # DNS rebinding guard (MCP Streamable HTTP): a browser Origin must be this host or a local one.
+  defp origin_ok?(conn) do
+    case get_req_header(conn, "origin") do
+      [] ->
+        true
+
+      [origin | _] ->
+        host = URI.parse(origin).host || ""
+
+        host == conn.host or host in ["localhost", "127.0.0.1"] or
+          String.ends_with?(host, ".localhost")
+    end
+  end
+
+  defp rpc(conn, _opts) do
     # Plug.Parsers in the endpoint has already decoded a JSON body.
     parsed =
       case conn.body_params do
@@ -64,8 +96,6 @@ defmodule PulumiViewerWeb.MCP do
     end
   end
 
-  def call(conn, _), do: conn |> put_resp_header("allow", "POST") |> send_resp(405, "")
-
   defp handle("initialize", _),
     do:
       {:ok,
@@ -82,8 +112,21 @@ defmodule PulumiViewerWeb.MCP do
   defp handle("tools/list", _), do: {:ok, %{tools: @tools}}
 
   defp handle("tools/call", %{"name" => name} = p) when name in ["checks", "flags"] do
-    args = p["arguments"] || %{}
+    case p["arguments"] || %{} do
+      %{} = args ->
+        if Enum.all?(~w(source stack min), &(args[&1] == nil or is_binary(args[&1]))),
+          do: call_tool(name, args),
+          else: {:error, -32602, "source, stack and min must be strings"}
 
+      _ ->
+        {:error, -32602, "arguments must be an object"}
+    end
+  end
+
+  defp handle("tools/call", _), do: {:error, -32602, "unknown tool"}
+  defp handle(_, _), do: {:error, -32601, "method not found"}
+
+  defp call_tool(name, args) do
     argv = [
       name
       | for(k <- ~w(source stack min), v = args[k], v not in [nil, ""], do: ["--#{k}", v])
@@ -96,12 +139,9 @@ defmodule PulumiViewerWeb.MCP do
      %{
        content: [%{type: "text", text: Jason.encode!(out)}],
        structuredContent: out,
-       isError: code == 2
+       isError: code == 2 or (name == "flags" and code != 0)
      }}
   end
-
-  defp handle("tools/call", _), do: {:error, -32602, "unknown tool"}
-  defp handle(_, _), do: {:error, -32601, "method not found"}
 
   defp reply(conn, id, {:ok, result}), do: json(conn, %{jsonrpc: "2.0", id: id, result: result})
 

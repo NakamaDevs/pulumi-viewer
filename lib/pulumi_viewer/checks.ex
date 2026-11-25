@@ -37,8 +37,9 @@ defmodule PulumiViewer.Checks do
       is_binary(inv) and String.starts_with?(inv, "cloudformation:") ->
         %{kind: :cloudformation, name: String.replace_prefix(inv, "cloudformation:", "")}
 
+      # same physical ID only: S3 sub-resources share the bucket ID, so this is a hint, not proof
       cfn ->
-        %{kind: :cloudformation, name: cfn.stack}
+        %{kind: :cloudformation, name: cfn.stack, by: :link}
 
       is_binary(inv) ->
         %{kind: :other, name: inv}
@@ -81,10 +82,15 @@ defmodule PulumiViewer.Checks do
   Flags, owner and findings of one Pulumi stack, plus a `:state_edit` finding for each resource
   that changed outside an update. `links` defaults to a fresh CloudFormation link index.
   """
-  def for_stack(source, project, stack, links \\ nil) do
+  def for_stack(source, project, stack, links \\ nil, resources \\ nil) do
     alias PulumiViewer.{Infra, Inventory}
 
-    with {:ok, cp} <- Infra.State.checkpoint(source, project, stack) do
+    loaded =
+      if resources,
+        do: {:ok, %{resources: resources}},
+        else: Infra.State.checkpoint(source, project, stack)
+
+    with {:ok, cp} <- loaded do
       links = links || Infra.Links.index(:pulumi)
       inv = Inventory.load(Inventory.dir(), stack)
       opts = [inventory: inv, links: links, expected: Inventory.expected(Inventory.dir(), stack)]
@@ -120,6 +126,7 @@ defmodule PulumiViewer.Checks do
     end
   end
 
+  defp rule(%{by: :link}), do: nil
   defp rule(%{kind: :cloudformation}), do: %{"protect" => true, "retainOnDelete" => true}
   defp rule(%{kind: :other, name: "script:" <> _}), do: %{"retainOnDelete" => false}
   defp rule(_), do: nil
@@ -148,6 +155,16 @@ defmodule PulumiViewer.Checks do
         [finding(:option_mismatch, sev, r, text)]
     end
   end
+
+  defp double_owner(r, %{kind: :cloudformation, name: stack, by: :link}),
+    do: [
+      finding(
+        :double_owner,
+        :info,
+        r,
+        "Same physical ID as a resource of CloudFormation stack #{stack}. Check if the stack owns it."
+      )
+    ]
 
   defp double_owner(r, %{kind: :cloudformation, name: stack}) do
     if r.protect and r.retain_on_delete,

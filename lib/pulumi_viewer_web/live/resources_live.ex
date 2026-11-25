@@ -53,19 +53,32 @@ defmodule PulumiViewerWeb.ResourcesLive do
 
   # stack key => urn => %{owner, findings}, for Pulumi stacks only
   defp checks(stacks, links) do
-    for {st, {:ok, _}} <- stacks, (st.kind || :pulumi) == :pulumi, into: %{} do
-      by_urn =
-        case PulumiViewer.Checks.for_stack(st.source, st.project, st.name, links) do
-          {:ok, %{resources: rs, findings: fs}} ->
-            fs = Enum.group_by(fs, & &1.urn)
-            Map.new(rs, &{&1.urn, %{owner: &1.owner, findings: Map.get(fs, &1.urn, [])}})
+    stacks
+    |> Enum.filter(fn {st, res} -> match?({:ok, _}, res) and (st.kind || :pulumi) == :pulumi end)
+    |> Task.async_stream(
+      fn {st, {:ok, rs}} ->
+        # reuse the resources already read: one checkpoint read less per stack
+        by_urn =
+          case PulumiViewer.Checks.for_stack(st.source, st.project, st.name, links, rs) do
+            {:ok, %{resources: rs, findings: fs}} ->
+              fs = Enum.group_by(fs, & &1.urn)
+              Map.new(rs, &{&1.urn, %{owner: &1.owner, findings: Map.get(fs, &1.urn, [])}})
 
-          _ ->
-            %{}
-        end
+            _ ->
+              %{}
+          end
 
-      {SourceResults.key(st), by_urn}
-    end
+        {SourceResults.key(st), by_urn}
+      end,
+      max_concurrency: 8,
+      timeout: 60_000,
+      on_timeout: :kill_task
+    )
+    |> Enum.flat_map(fn
+      {:ok, pair} -> [pair]
+      _ -> []
+    end)
+    |> Map.new()
   end
 
   defp env_sort(%{environment: {:env, _} = e}), do: PulumiViewer.Environment.sort_key(e)

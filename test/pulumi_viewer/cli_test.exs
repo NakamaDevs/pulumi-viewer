@@ -37,6 +37,13 @@ defmodule PulumiViewer.CLITest do
     assert %{protect: false, owner: %{kind: :pulumi}} = Enum.find(rs, &(&1.name == "jobs"))
   end
 
+  test "an unreadable source or an unknown stack is an error, exit 2" do
+    Application.put_env(:pulumi_viewer, :sources, "g=file:///nonexistent/pv-dir")
+    assert {2, %{stacks: [%{source: "g", error: _}]}} = CLI.run(~w(checks))
+    Application.put_env(:pulumi_viewer, :sources, "guarded=file://test/fixtures/guarded")
+    assert {2, %{error: _}} = CLI.run(~w(checks --stack nope/nope))
+  end
+
   test "usage error" do
     assert {2, %{error: _}} = CLI.run(["nope"])
   end

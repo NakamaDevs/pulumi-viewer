@@ -12,8 +12,8 @@ defmodule PulumiViewer.Inventory do
   def load(dir, stack) do
     case read(dir, "#{stack}.json") do
       %{"components" => comps} when is_map(comps) ->
-        for {_, items} <- comps,
-            %{"type" => t, "name" => n} = it <- items,
+        for {_, items} when is_list(items) <- comps,
+            %{"type" => t, "name" => n} = it when is_binary(t) and is_binary(n) <- items,
             into: %{},
             do: {{t, n}, it}
 

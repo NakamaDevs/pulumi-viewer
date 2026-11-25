@@ -38,28 +38,48 @@ defmodule PulumiViewer.CLI do
     min = rank(opts[:min] || "info")
     links = PulumiViewer.Infra.Links.index(:pulumi)
 
-    stacks =
-      for {src, project, stack} <- stacks(opts) do
-        case Checks.for_stack(src, project, stack, links) do
-          {:ok, %{findings: fs}} ->
-            %{
-              source: src,
-              project: project,
-              stack: stack,
-              findings: Enum.filter(fs, &(rank(&1.severity) <= min))
-            }
+    targets = stacks(opts)
 
-          {:error, e} ->
-            %{source: src, project: project, stack: stack, error: PulumiViewer.error_message(e)}
+    stacks =
+      for t <- targets do
+        case t do
+          {:error, {src, msg}} -> %{source: src, error: msg}
+          {src, project, stack} -> check_one(src, project, stack, links, min)
         end
       end
 
-    bad = Enum.any?(stacks, &(Map.get(&1, :findings, []) != []))
-    {if(bad, do: 1, else: 0), %{stacks: stacks}}
+    cond do
+      opts[:stack] && not Enum.any?(targets, &match?({_, _, _}, &1)) ->
+        {2, %{error: "no stack #{opts[:stack]}", stacks: stacks}}
+
+      Enum.any?(stacks, &Map.has_key?(&1, :error)) ->
+        {2, %{stacks: stacks}}
+
+      Enum.any?(stacks, &(Map.get(&1, :findings, []) != [])) ->
+        {1, %{stacks: stacks}}
+
+      true ->
+        {0, %{stacks: stacks}}
+    end
+  end
+
+  defp check_one(src, project, stack, links, min) do
+    case Checks.for_stack(src, project, stack, links) do
+      {:ok, %{findings: fs}} ->
+        %{
+          source: src,
+          project: project,
+          stack: stack,
+          findings: Enum.filter(fs, &(rank(&1.severity) <= min))
+        }
+
+      {:error, e} ->
+        %{source: src, project: project, stack: stack, error: PulumiViewer.error_message(e)}
+    end
   end
 
   def flags(opts) do
-    case stacks(opts) do
+    case Enum.filter(stacks(opts), &match?({_, _, _}, &1)) do
       [{src, project, stack}] ->
         case Checks.for_stack(src, project, stack) do
           {:ok, %{resources: rs}} ->
@@ -81,11 +101,21 @@ defmodule PulumiViewer.CLI do
 
     want = opts[:stack] && String.split(opts[:stack], "/", parts: 2)
 
-    for s <- sources,
-        {:ok, list} <- [PulumiViewer.Infra.State.stacks(s)],
-        st <- list,
-        want in [nil, [st.project || "", st.stack], [st.stack]],
-        do: {s.name, st.project, st.stack}
+    Enum.flat_map(sources, fn s ->
+      case PulumiViewer.Infra.State.stacks(s) do
+        # a missing folder or an empty bucket reads as no stacks: an error for a gate
+        {:ok, []} ->
+          [{:error, {s.name, "no stacks in this source"}}]
+
+        {:ok, list} ->
+          for st <- list,
+              want in [nil, [st.project || "", st.stack], [st.stack]],
+              do: {s.name, st.project, st.stack}
+
+        {:error, e} ->
+          [{:error, {s.name, PulumiViewer.error_message(e)}}]
+      end
+    end)
   end
 
   defp rank(l) when l in [:error, "error"], do: 0

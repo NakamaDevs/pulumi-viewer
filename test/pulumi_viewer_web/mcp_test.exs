@@ -35,6 +35,28 @@ defmodule PulumiViewerWeb.MCPTest do
     refute res["isError"]
   end
 
+  test "a form post or a foreign Origin is refused", %{conn: conn} do
+    c =
+      conn
+      |> put_req_header("content-type", "application/x-www-form-urlencoded")
+      |> post("/mcp", "id=1&method=tools/list")
+
+    assert c.status == 415
+
+    c =
+      build_conn()
+      |> put_req_header("content-type", "application/json")
+      |> put_req_header("origin", "https://evil.example")
+      |> post("/mcp", ~s({"jsonrpc":"2.0","id":1,"method":"tools/list"}))
+
+    assert c.status == 403
+  end
+
+  test "bad arguments give a JSON-RPC error", %{conn: conn} do
+    assert %{"error" => %{"code" => -32602}} =
+             rpc(conn, "tools/call", %{name: "checks", arguments: %{stack: 5}})
+  end
+
   test "a notification gets 202 and GET gets 405", %{conn: conn} do
     c =
       conn

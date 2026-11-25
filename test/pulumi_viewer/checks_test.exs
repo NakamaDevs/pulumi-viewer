@@ -44,10 +44,8 @@ defmodule PulumiViewer.ChecksTest do
              name: "logs-stack"
            }
 
-    assert Checks.owner(by_name(rs, "runner"), inv, links) == %{
-             kind: :cloudformation,
-             name: "iam"
-           }
+    assert Checks.owner(by_name(rs, "runner"), inv, links) ==
+             %{kind: :cloudformation, name: "iam", by: :link}
 
     assert Checks.owner(by_name(rs, "alerts"), inv, links) == %{
              kind: :other,
@@ -91,6 +89,30 @@ defmodule PulumiViewer.ChecksTest do
     assert jobs.name == "jobs"
     assert jobs.message =~ "protect"
     assert jobs.message =~ "retainOnDelete"
+  end
+
+  test "a CloudFormation owner found only by physical ID gives info, never an option error" do
+    links = %{
+      "runner-role" => [%{source: "cfn", kind: :cloudformation, project: nil, stack: "iam"}]
+    }
+
+    fs =
+      Checks.run(resources(), inventory: %{}, links: links) |> Enum.filter(&(&1.name == "runner"))
+
+    assert [%{check: :double_owner, severity: :info}] = fs
+  end
+
+  test "a malformed inventory gives an empty map" do
+    dir = Path.join(System.tmp_dir!(), "pv-inv-#{System.unique_integer([:positive])}")
+    File.mkdir_p!(dir)
+
+    File.write!(
+      Path.join(dir, "prod.json"),
+      ~s({"components": {"a": "oops", "b": [{"type": 1}]}})
+    )
+
+    on_exit(fn -> File.rm_rf!(dir) end)
+    assert Inventory.load(dir, "prod") == %{}
   end
 
   test "no unprotected finding when most resources are not protected" do

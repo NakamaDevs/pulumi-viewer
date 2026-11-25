@@ -22,6 +22,16 @@ defmodule PulumiViewer.StateEditTest do
     assert update.version == 3
   end
 
+  test "no state edit while the stack has a lock (an update runs)" do
+    dir = Path.join(System.tmp_dir!(), "pv-lock-#{System.unique_integer([:positive])}")
+    File.cp_r!("test/fixtures/guarded", dir)
+    File.mkdir_p!(Path.join(dir, ".pulumi/locks/bundle/prod"))
+    File.write!(Path.join(dir, ".pulumi/locks/bundle/prod/x.json"), "{}")
+    Application.put_env(:pulumi_viewer, :sources, "locked=file://#{dir}")
+    on_exit(fn -> File.rm_rf!(dir) end)
+    assert [%{version: 3}] = PulumiViewer.Infra.list_updates!("bundle", "prod", "locked")
+  end
+
   test "no state edit when the state equals the last update" do
     assert [%{version: 7}, _] = PulumiViewer.Infra.list_updates!("demo", "dev", "demo")
   end
