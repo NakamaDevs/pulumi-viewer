@@ -19,6 +19,8 @@ defmodule PulumiViewer.Infra.Resource do
     attribute :id, :string, public?: true
     attribute :custom, :boolean, public?: true
     attribute :protect, :boolean, public?: true
+    attribute :retain_on_delete, :boolean, public?: true
+    attribute :delete_before_replace, :boolean, public?: true
     attribute :parent_urn, :string, public?: true
     attribute :provider_urn, :string, public?: true
     attribute :dependencies, {:array, :string}, public?: true

@@ -1,0 +1,34 @@
+{
+ "stack": "prod",
+ "components": {
+  "storage": [
+   {
+    "type": "aws:s3/bucketV2:BucketV2",
+    "name": "assets",
+    "id": "assets-prod",
+    "plan": "import",
+    "owner": "cloudformation:assets-stack"
+   },
+   {
+    "type": "aws:s3/bucketV2:BucketV2",
+    "name": "logs",
+    "id": "logs-prod",
+    "plan": "import",
+    "owner": "cloudformation:logs-stack"
+   }
+  ],
+  "messaging": [
+   {
+    "type": "aws:sqs/queue:Queue",
+    "name": "jobs",
+    "plan": "import"
+   },
+   {
+    "type": "aws:sns/topic:Topic",
+    "name": "alerts",
+    "plan": "import",
+    "owner": "script:wayfair-v1"
+   }
+  ]
+ }
+}

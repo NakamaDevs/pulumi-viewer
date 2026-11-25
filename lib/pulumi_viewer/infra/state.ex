@@ -53,7 +53,7 @@ defmodule PulumiViewer.Infra.State do
 
           backend ->
             case safe(fn -> {:ok, pulumi_updates(backend, project, stack, limit)} end) do
-              {:ok, updates} -> updates
+              {:ok, updates} -> state_edit(s, backend, project, stack, updates) ++ updates
               _ -> []
             end
         end
@@ -76,6 +76,61 @@ defmodule PulumiViewer.Infra.State do
            do: [Map.put(u, :resources, changed_resources(backend, key, older, u.changes))],
            else: (_ -> [])
     end)
+  end
+
+  # A change of the stack file after the last update, without a history record: `pulumi state
+  # unprotect`, `state delete`, `state edit` and the like. Version 0, so it never collides with an
+  # update. The time is the newest DIY backup taken after the last update (Pulumi writes one on
+  # each state save), else unknown.
+  defp state_edit(src, backend, project, stack, updates) do
+    with {:ok, now} <- checkpoint(src, project, stack),
+         [last_key | _] <- history_keys(backend, project, stack),
+         {:ok, before} <- checkpoint_resources(backend, last_key),
+         [_ | _] = changed <- Diff.changed(before, now.resources, %{}) do
+      last = List.first(updates)
+      after_s = (last && last.started_at && DateTime.to_unix(last.started_at)) || 0
+
+      [
+        %{
+          version: 0,
+          kind: "state edit",
+          result: "state edit",
+          message: "State changed outside an update (for example pulumi state unprotect).",
+          started_at: newest_backup(backend, project, stack, after_s),
+          duration_s: nil,
+          changes: changed |> Enum.frequencies_by(& &1.op),
+          resources: changed
+        }
+      ]
+    else
+      _ -> []
+    end
+  end
+
+  defp history_keys(backend, project, stack),
+    do:
+      Layout.history_prefix(blank(project), stack)
+      |> then(&Storage.list(backend, &1))
+      |> Layout.history_keys()
+
+  defp newest_backup(backend, project, stack, after_s) do
+    prefix =
+      String.replace_prefix(
+        Layout.history_prefix(blank(project), stack),
+        ".pulumi/history/",
+        ".pulumi/backups/"
+      )
+
+    Storage.list(backend, prefix)
+    |> Enum.flat_map(fn k ->
+      case Regex.run(~r/\.(\d{19})\.json(?:\.gz)?$/, k) do
+        [_, n] -> [div(String.to_integer(n), 1_000_000_000)]
+        _ -> []
+      end
+    end)
+    |> Enum.filter(&(&1 > after_s))
+    |> Enum.max(fn -> nil end)
+    |> then(&(&1 && DateTime.from_unix!(&1)))
   end
 
   # The resources this update changed: its checkpoint against the one of the update before.

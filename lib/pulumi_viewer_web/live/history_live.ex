@@ -30,7 +30,14 @@ defmodule PulumiViewerWeb.HistoryLive do
         u <- us,
         do: %{id: "#{SourceResults.key(st)}##{u.version}", stack: st, u: u}
       )
-      |> Enum.sort_by(&sort_time(&1.u.started_at), :desc)
+      # a state edit with no known time happened after the stack's last update: keep it on top
+      |> Enum.sort_by(
+        &if(&1.u.kind == "state edit" and is_nil(&1.u.started_at),
+          do: :infinity,
+          else: sort_time(&1.u.started_at)
+        ),
+        :desc
+      )
 
     %{
       results: results,
@@ -125,6 +132,7 @@ defmodule PulumiViewerWeb.HistoryLive do
                       {"all", "All results"},
                       {"succeeded", "Succeeded"},
                       {"failed", "Failed"},
+                      {"state edit", "State edits"},
                       {"in-progress", "In progress"}
                     ]
                   }

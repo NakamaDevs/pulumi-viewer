@@ -25,6 +25,9 @@ defmodule PulumiViewerWeb.Router do
     live "/stacks/:project/:stack", StackLive
   end
 
+  # Read-only MCP server (checks and flags tools).
+  forward "/mcp", PulumiViewerWeb.MCP
+
   # Other scopes may use custom stacks.
   # scope "/api", PulumiViewerWeb do
   #   pipe_through :api

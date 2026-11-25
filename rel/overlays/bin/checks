@@ -1,0 +1,11 @@
+#!/bin/sh
+# Read-only safety checks in the running container. Prints JSON.
+#   bin/checks checks [--source NAME] [--stack PROJECT/STACK] [--min error|warning|info]
+#   bin/checks flags --stack PROJECT/STACK
+set -e
+list=""
+for a in "$@"; do
+  esc=$(printf '%s' "$a" | sed 's/[\\"]/\\&/g; s/#/\\#/g')
+  list="$list\"$esc\","
+done
+exec "$(dirname "$0")/pulumi_viewer" rpc "PulumiViewer.CLI.main([${list%,}])"

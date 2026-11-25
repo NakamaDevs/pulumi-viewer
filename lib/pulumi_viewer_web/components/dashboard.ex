@@ -109,6 +109,7 @@ defmodule PulumiViewerWeb.Dashboard do
   attr :selected, :string, default: nil
   attr :key, :string, default: nil, doc: "stack key sent with select and toggle"
   attr :base_depth, :integer, default: 0
+  attr :checks, :map, default: %{}, doc: "urn => %{owner, findings} from PulumiViewer.Checks"
 
   @doc "Resource rows with tree lines and expand/collapse, like parent/child resources."
   def resource_rows(assigns) do
@@ -146,12 +147,65 @@ defmodule PulumiViewerWeb.Dashboard do
       <span class="font-semibold truncate min-w-[8rem]">
         {if row.resource.protect, do: "🔒 "}{row.resource.name}
       </span>
+      <.resource_flags r={row.resource} check={@checks[row.resource.urn]} />
       <span class="font-mono text-xs opacity-75 truncate flex-1 max-md:hidden">{row.resource.type}</span>
       <span class="font-mono text-xs opacity-75 truncate max-w-[18rem] max-lg:hidden">{row.resource.id}</span>
       <.icon name="hero-ellipsis-horizontal" class="size-4 opacity-60 shrink-0" />
     </div>
     """
   end
+
+  attr :r, :map, required: true
+  attr :check, :map, default: nil
+
+  @doc "Small badges: retainOnDelete, deleteBeforeReplace, CloudFormation owner, worst finding."
+  def resource_flags(assigns) do
+    assigns = assign(assigns, worst: worst(assigns.check))
+
+    ~H"""
+    <span class="flex shrink-0 items-center gap-1">
+      <span
+        :if={Map.get(@r, :retain_on_delete)}
+        class="pv-flag"
+        data-flag="retain"
+        title="retainOnDelete: a Pulumi delete only forgets it"
+      >retain</span>
+      <span
+        :if={Map.get(@r, :delete_before_replace)}
+        class="pv-flag"
+        data-flag="dbr"
+        title="deleteBeforeReplace"
+      >DBR</span>
+      <span
+        :if={@check && @check.owner.kind == :cloudformation}
+        class="pv-badge"
+        data-kind="cloudformation"
+        title={"Also owned by CloudFormation stack #{@check.owner.name}"}
+      >CFN</span>
+      <span
+        :if={@worst}
+        class="pv-flag"
+        data-sev={@worst}
+        data-finding
+        title={Enum.map_join(@check.findings, "\n", & &1.message)}
+      >
+        <.icon name="hero-exclamation-triangle-mini" class="size-3" /> {length(@check.findings)}
+      </span>
+    </span>
+    """
+  end
+
+  def worst(%{findings: [_ | _] = fs}),
+    do: Enum.find([:error, :warning, :info], &Enum.any?(fs, fn f -> f.severity == &1 end))
+
+  def worst(_), do: nil
+
+  def version_label(%{kind: "state edit"}), do: "edit"
+  def version_label(u), do: to_string(u.version)
+
+  def owner_label(%{kind: :cloudformation, name: n}), do: "CloudFormation (#{n})"
+  def owner_label(%{kind: :other, name: n}), do: "Other (#{n})"
+  def owner_label(_), do: "Pulumi"
 
   attr :orientation, :string, required: true
   attr :open, :boolean, required: true
@@ -252,6 +306,9 @@ defmodule PulumiViewerWeb.Dashboard do
     """
   end
 
+  defp yes_no(true), do: "yes"
+  defp yes_no(_), do: "no"
+
   def pretty(term), do: Jason.encode!(term, pretty: true)
 
   def raw_map(r),
@@ -292,6 +349,7 @@ defmodule PulumiViewerWeb.Dashboard do
   attr :links, :list, required: true
   attr :resources, :list, required: true
   attr :stack, :map, default: nil, doc: "shown with a link on cross-stack pages"
+  attr :check, :map, default: nil, doc: "%{owner, findings} of this resource"
 
   def resource_details(assigns) do
     ~H"""
@@ -308,8 +366,32 @@ defmodule PulumiViewerWeb.Dashboard do
         <dt>Type</dt><dd>{@r.type}</dd>
         <dt>Provider</dt><dd>{@r.provider_urn || @r.package}</dd>
         <dt :if={@r.parent_urn}>Parent</dt><dd :if={@r.parent_urn}>{@r.parent_urn}</dd>
-        <dt>Protected</dt><dd>{if @r.protect, do: "yes", else: "no"}</dd>
       </dl>
+    </.section>
+    <.section name="options" title="Resource options" icon="hero-shield-check">
+      <dl class="pv-kv">
+        <dt>Protected</dt><dd>{yes_no(@r.protect)}</dd>
+        <dt>Retain on delete</dt><dd>{yes_no(Map.get(@r, :retain_on_delete))}</dd>
+        <dt>Delete before replace</dt><dd>{yes_no(Map.get(@r, :delete_before_replace))}</dd>
+        <dt :if={@check}>Owner</dt><dd :if={@check} class="!font-sans">
+          {owner_label(@check.owner)}
+        </dd>
+      </dl>
+    </.section>
+    <.section
+      :if={@check}
+      name="findings"
+      title="Findings"
+      icon="hero-exclamation-triangle"
+      count={length(@check.findings)}
+    >
+      <ul class="space-y-1">
+        <li :for={f <- @check.findings} class="flex items-start gap-2 text-sm" data-check={f.check}>
+          <span class="pv-flag" data-sev={f.severity}>{f.severity}</span>
+          <span>{f.message}</span>
+        </li>
+      </ul>
+      <p :if={@check.findings == []} class="text-xs opacity-70">No findings.</p>
     </.section>
     <.section name="links" title="Links" icon="hero-link" count={length(@links)} open={@links != []}>
       <dl class="pv-kv">
@@ -378,7 +460,11 @@ defmodule PulumiViewerWeb.Dashboard do
 
   def update_details(assigns) do
     ~H"""
-    <.details_header icon="hero-clock" title={"Update #{@u.version}"} subtitle={@u.kind} />
+    <.details_header
+      icon="hero-clock"
+      title={if @u.kind == "state edit", do: "State edit", else: "Update #{@u.version}"}
+      subtitle={@u.kind}
+    />
     <.section name="update" title="Update">
       <dl class="pv-kv">
         <dt :if={@stack}>Stack</dt>

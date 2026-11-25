@@ -1,0 +1,11 @@
+{
+ "kind": "update",
+ "result": "succeeded",
+ "version": 3,
+ "message": "apply",
+ "startTime": 1764000000,
+ "endTime": 1764000060,
+ "resourceChanges": {
+  "same": 7
+ }
+}

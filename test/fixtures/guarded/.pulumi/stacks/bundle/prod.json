@@ -1,0 +1,87 @@
+{
+ "version": 3,
+ "checkpoint": {
+  "stack": "organization/bundle/prod",
+  "latest": {
+   "manifest": {
+    "time": "2026-11-25T05:20:00Z",
+    "version": "v3.200.0"
+   },
+   "resources": [
+    {
+     "urn": "urn:pulumi:prod::bundle::pulumi:pulumi:Stack::bundle-prod",
+     "type": "pulumi:pulumi:Stack",
+     "custom": false,
+     "inputs": {},
+     "outputs": {}
+    },
+    {
+     "urn": "urn:pulumi:prod::bundle::pulumi:providers:aws::default",
+     "type": "pulumi:providers:aws",
+     "custom": true,
+     "inputs": {},
+     "outputs": {},
+     "id": "prov-1"
+    },
+    {
+     "urn": "urn:pulumi:prod::bundle::aws:s3/bucketV2:BucketV2::assets",
+     "type": "aws:s3/bucketV2:BucketV2",
+     "custom": true,
+     "inputs": {},
+     "outputs": {},
+     "id": "assets-prod",
+     "provider": "urn:pulumi:prod::bundle::pulumi:providers:aws::default::prov-1",
+     "parent": "urn:pulumi:prod::bundle::pulumi:pulumi:Stack::bundle-prod",
+     "protect": true,
+     "retainOnDelete": true
+    },
+    {
+     "urn": "urn:pulumi:prod::bundle::aws:s3/bucketV2:BucketV2::logs",
+     "type": "aws:s3/bucketV2:BucketV2",
+     "custom": true,
+     "inputs": {},
+     "outputs": {},
+     "id": "logs-prod",
+     "provider": "urn:pulumi:prod::bundle::pulumi:providers:aws::default::prov-1",
+     "parent": "urn:pulumi:prod::bundle::pulumi:pulumi:Stack::bundle-prod",
+     "protect": true
+    },
+    {
+     "urn": "urn:pulumi:prod::bundle::aws:sqs/queue:Queue::jobs",
+     "type": "aws:sqs/queue:Queue",
+     "custom": true,
+     "inputs": {},
+     "outputs": {},
+     "id": "https://sqs/jobs",
+     "provider": "urn:pulumi:prod::bundle::pulumi:providers:aws::default::prov-1",
+     "parent": "urn:pulumi:prod::bundle::pulumi:pulumi:Stack::bundle-prod",
+     "protect": false
+    },
+    {
+     "urn": "urn:pulumi:prod::bundle::aws:iam/role:Role::runner",
+     "type": "aws:iam/role:Role",
+     "custom": true,
+     "inputs": {},
+     "outputs": {},
+     "id": "runner-role",
+     "provider": "urn:pulumi:prod::bundle::pulumi:providers:aws::default::prov-1",
+     "parent": "urn:pulumi:prod::bundle::pulumi:pulumi:Stack::bundle-prod",
+     "protect": true,
+     "deleteBeforeReplace": true
+    },
+    {
+     "urn": "urn:pulumi:prod::bundle::aws:sns/topic:Topic::alerts",
+     "type": "aws:sns/topic:Topic",
+     "custom": true,
+     "inputs": {},
+     "outputs": {},
+     "id": "arn:aws:sns:us-east-1:1:alerts",
+     "provider": "urn:pulumi:prod::bundle::pulumi:providers:aws::default::prov-1",
+     "parent": "urn:pulumi:prod::bundle::pulumi:pulumi:Stack::bundle-prod",
+     "protect": true,
+     "retainOnDelete": true
+    }
+   ]
+  }
+ }
+}
