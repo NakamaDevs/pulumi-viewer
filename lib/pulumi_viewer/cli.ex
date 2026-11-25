@@ -49,6 +49,9 @@ defmodule PulumiViewer.CLI do
       end
 
     cond do
+      targets == [] ->
+        {2, %{error: "no Pulumi source matches", stacks: []}}
+
       opts[:stack] && not Enum.any?(targets, &match?({_, _, _}, &1)) ->
         {2, %{error: "no stack #{opts[:stack]}", stacks: stacks}}
 

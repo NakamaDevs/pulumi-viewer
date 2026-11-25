@@ -37,12 +37,12 @@ defmodule PulumiViewer.Checks do
       is_binary(inv) and String.starts_with?(inv, "cloudformation:") ->
         %{kind: :cloudformation, name: String.replace_prefix(inv, "cloudformation:", "")}
 
+      is_binary(inv) ->
+        %{kind: :other, name: inv}
+
       # same physical ID only: S3 sub-resources share the bucket ID, so this is a hint, not proof
       cfn ->
         %{kind: :cloudformation, name: cfn.stack, by: :link}
-
-      is_binary(inv) ->
-        %{kind: :other, name: inv}
 
       true ->
         %{kind: :pulumi, name: nil}

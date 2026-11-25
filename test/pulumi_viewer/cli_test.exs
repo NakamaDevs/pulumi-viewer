@@ -42,6 +42,7 @@ defmodule PulumiViewer.CLITest do
     assert {2, %{stacks: [%{source: "g", error: _}]}} = CLI.run(~w(checks))
     Application.put_env(:pulumi_viewer, :sources, "guarded=file://test/fixtures/guarded")
     assert {2, %{error: _}} = CLI.run(~w(checks --stack nope/nope))
+    assert {2, %{error: _}} = CLI.run(~w(checks --source typo))
   end
 
   test "usage error" do

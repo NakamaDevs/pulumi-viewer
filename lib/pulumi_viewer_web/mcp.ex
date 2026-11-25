@@ -59,7 +59,7 @@ defmodule PulumiViewerWeb.MCP do
     do:
       Enum.any?(
         get_req_header(conn, "content-type"),
-        &String.starts_with?(&1, "application/json")
+        &String.starts_with?(String.downcase(&1), "application/json")
       )
 
   # DNS rebinding guard (MCP Streamable HTTP): a browser Origin must be this host or a local one.
@@ -71,8 +71,10 @@ defmodule PulumiViewerWeb.MCP do
       [origin | _] ->
         host = URI.parse(origin).host || ""
 
-        host == conn.host or host in ["localhost", "127.0.0.1"] or
-          String.ends_with?(host, ".localhost")
+        # never conn.host: under DNS rebinding the Host header is the attacker's name too
+        configured = PulumiViewerWeb.Endpoint.config(:url)[:host]
+
+        host in [configured, "localhost", "127.0.0.1"] or String.ends_with?(host, ".localhost")
     end
   end
 

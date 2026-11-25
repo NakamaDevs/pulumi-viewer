@@ -50,6 +50,16 @@ defmodule PulumiViewerWeb.MCPTest do
       |> post("/mcp", ~s({"jsonrpc":"2.0","id":1,"method":"tools/list"}))
 
     assert c.status == 403
+
+    # DNS rebinding: Host and Origin both carry the attacker's name
+    c =
+      build_conn()
+      |> Map.put(:host, "evil.example")
+      |> put_req_header("content-type", "application/json")
+      |> put_req_header("origin", "http://evil.example")
+      |> post("/mcp", ~s({"jsonrpc":"2.0","id":1,"method":"tools/list"}))
+
+    assert c.status == 403
   end
 
   test "bad arguments give a JSON-RPC error", %{conn: conn} do

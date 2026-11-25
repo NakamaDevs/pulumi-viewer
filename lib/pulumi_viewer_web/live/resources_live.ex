@@ -55,25 +55,29 @@ defmodule PulumiViewerWeb.ResourcesLive do
   defp checks(stacks, links) do
     stacks
     |> Enum.filter(fn {st, res} -> match?({:ok, _}, res) and (st.kind || :pulumi) == :pulumi end)
-    |> Task.async_stream(
-      fn {st, {:ok, rs}} ->
-        # reuse the resources already read: one checkpoint read less per stack
-        by_urn =
-          case PulumiViewer.Checks.for_stack(st.source, st.project, st.name, links, rs) do
-            {:ok, %{resources: rs, findings: fs}} ->
-              fs = Enum.group_by(fs, & &1.urn)
-              Map.new(rs, &{&1.urn, %{owner: &1.owner, findings: Map.get(fs, &1.urn, [])}})
+    |> then(fn list ->
+      Task.Supervisor.async_stream_nolink(
+        PulumiViewer.TaskSupervisor,
+        list,
+        fn {st, {:ok, rs}} ->
+          # reuse the resources already read: one checkpoint read less per stack
+          by_urn =
+            case PulumiViewer.Checks.for_stack(st.source, st.project, st.name, links, rs) do
+              {:ok, %{resources: rs, findings: fs}} ->
+                fs = Enum.group_by(fs, & &1.urn)
+                Map.new(rs, &{&1.urn, %{owner: &1.owner, findings: Map.get(fs, &1.urn, [])}})
 
-            _ ->
-              %{}
-          end
+              _ ->
+                %{}
+            end
 
-        {SourceResults.key(st), by_urn}
-      end,
-      max_concurrency: 8,
-      timeout: 60_000,
-      on_timeout: :kill_task
-    )
+          {SourceResults.key(st), by_urn}
+        end,
+        max_concurrency: 8,
+        timeout: 60_000,
+        on_timeout: :kill_task
+      )
+    end)
     |> Enum.flat_map(fn
       {:ok, pair} -> [pair]
       _ -> []
